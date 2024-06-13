@@ -1,0 +1,290 @@
+---
+title: "Polynomial Regression"
+output:
+  html_document:
+    theme: cosmo
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+  word_document:
+    toc: yes
+    toc_depth: '3'
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include = FALSE}
+library(rio) # for importing data
+library(pwrss) # for power analysis
+library(psych) # descriptive statistics
+library(tidyverse) # data wrangling
+library(ggplot2) # data visualization
+library(broom) # for augment() function
+library(lsr) # for etaSquared() function
+library(car) # for leveneTest() function
+library(emmeans) # for unpacking model results
+library(lme4) # for the lmer() function
+library(lmerTest) # to add p-values to the lmer() output
+library(rstatix) # for anova_test() function
+```
+
+
+# Research Scenario
+
+A professor is interested in the pattern that average scores on the three exams that they give in their course follow. The professor gives three exams throughout the term: midterm 1, midterm 2, and a final exam. The professor hopes that scores on the exams follow a linear trend such that average scores improve on every successive exam. However, it's also possible that the pattern of average scores could follow a quadratic trend such that scores could initially improve from midterm 1 to midterm 2, but then worsen on the final exam since the final exam tends to be more difficult than either midterm.
+
+For this scenario, we're going to test whether a linear or a quadratic trend significantly fits the pattern in the data. The data can be imported from the `examscores.csv` file on Canvas.
+
+# Import Data
+```{r}
+data <- import("examscores.csv")
+
+head(data)
+```
+
+# Data Cleaning 
+
+The independent variable, exam, should be a **factor**. The dependent variable, score, should be **integer** or **numeric**.
+
+IV: Exam (categorical predictor)
+
+- 1 = Midterm 1
+- 2 = Midterm 2
+- 3 = Final Exam
+
+DV: Score on the exam
+
+First, check each variable's measure type.
+```{r}
+str(data)
+```
+
+We need to convert `ID` and `exam` into factors.
+
+**Note:** Since `exam` was imported as an **integer** variable, when converting it to a factor, we need to specify the labels *in the order that they are numerically specified* (**not** in alphabetical order like we would need to do if the variable was imported as a **character** variable).
+
+```{r}
+data <- data %>%
+  mutate(ID = as.factor(ID),
+         exam = factor(exam, labels = c("Midterm 1", "Midterm 2", "Final Exam")))
+
+levels(data$ID)
+levels(data$exam)
+```
+
+
+# Descriptive Statistics
+
+Let's produce a descriptive statistics table showing the *mean* and *standard deviation* for scores across each level of **exam**:
+
+Table
+```{r}
+descriptives <- data %>%
+  group_by(exam) %>%
+  summarize(mean = mean(score),
+            sd = sd(score))
+
+descriptives %>% 
+  knitr::kable(digits = 2, col.names = c("Exam", "Mean", "SD"), caption = "Descriptive Statistics for Scores Across Exams Given", format.args = list(nsmall = 2))
+```
+
+
+Second, let's make a graph displaying the mean score across each exam given.
+
+Graph
+```{r}
+ggplot(descriptives, aes(x = exam, y = mean, fill = exam)) +
+  geom_bar(stat = "identity") +
+  ggtitle("Average Scores Across Exams Given") +
+  labs(x = "Exam",
+       y = "Mean Score") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+>> Question: What type of pattern do the average exam scores appear to follow?
+
+
+# Fit the Model
+
+## Contrast Coding
+
+For a categorical predictor with 3 levels, we can construct **m-1 = 3-1 = 2 contrast codes**.
+
+When you are constructing **two** contrast codes, the set of codes we can use to test the significance of a **linear** and a **quadratic** trend in the data are:
+
+* Linear trend:  -1/2, 0, 1/2
+
+* Quadratic trend:  -1/3, 2/3, -1/3
+
+Let's specify these for our `exam` predictor:
+
+Normally, we would specify the contrast codes like this (lines below are intentionally commented out):
+```{r}
+# linearCC <- c(-1/2,0,1/2)
+# quadraticCC <- c(-1/3,2/3,-1/3)
+
+# contrasts(data$exam) <- cbind(linearCC, quadraticCC)
+```
+
+However, if we contrast code the predictor this way, when we use the `anova()` function to interpret the model output, it will only report an F-statistic for the **overall model**. 
+
+If we want the `anova()` function to provide an F-statistic for **each contrast code**, we can use the method below for assigning contrast codes.
+
+
+## Alternative contrast coding method:
+
+* This alternative method of contrast coding creates the contrast codes as variables in the original data set to be used as predictors.
+
+* It's important, when using this method of contrast coding, to examine the data set first so you are aware how many participants are in each level of the categorical predictor.
+
+**Remember** the contrast codes we want to create are: 
+
+* Linear trend:  -1/2, 0, 1/2
+
+* Quadratic trend:  -1/3, 2/3, -1/3
+
+```{r}
+# In the data, the first 10 scores are from the Midterm 1 condition, the second 10 scores are from the Midterm 2 condition, and the third 10 scores are from the Final Exam condition
+
+data$linearCC <- c(rep(-1/2,10),rep(0,10),rep(1/2,10))
+data$quadraticCC <- c(rep(-1/3,10),rep(2/3,10),rep(-1/3,10))
+
+head(data)
+```
+
+**Note**: Since we created each of these contrast codes as their own variables and did **not** apply them to the contrasts() assigned to `exam`, we have to use the variables we created as the predictors in our model below.
+
+
+## Fit the model
+
+Let's predict `score` from the linear & quadratic contrast codes for `exam`. 
+
+* Since this is a within-subjects design (i.e., the **same participants** were measured three times on the DV), we need to use `lmer()` when fitting the model.
+
+```{r}
+model <- lmer(score ~ linearCC + quadraticCC + (1|ID), data = data)
+```
+
+
+* If the categorical predictor had been a between-subjects factor (i.e., if participants in each group were **independent** of each other), we would use `lm()` to fit the model, like you see below:
+
+```{r}
+model_between <- lm(score ~ linearCC + quadraticCC, data = data)
+```
+
+
+
+
+# Checking whether model assumptions were met
+
+## Checking whether errors are normally distributed
+```{r}
+residuals <- model %>%
+  residuals() %>%
+  as.data.frame() # store the residuals as a data frame
+
+head(residuals) # check first few residuals
+colnames(residuals) <- "resid" # give it a column name
+
+ggplot(data = residuals, aes(x = resid)) + 
+  geom_density(fill = "purple") + 
+  stat_function(linetype = 2, 
+                fun = dnorm, 
+                args = list(mean = mean(residuals$resid), 
+                            sd = sd(residuals$resid)))
+```
+
+* The residuals are approximately normally distributed
+
+
+## Checking independence of errors
+
+Remember that when working with a **within-subjects factor**, the independence assumption is that each participant's errors *within each condition* are independent of the other participants' errors.
+```{r}
+data$resid <- residuals$resid # add the residuals to the original data so we can play them by ID
+
+ggplot(data = data, aes(x = ID, y = resid)) +
+  geom_point() +
+  facet_wrap(~exam)
+```
+
+* Overall, there doesn't look to be a systematic pattern in the relationship between ID and the model's residuals within any of the exam conditions.
+
+
+
+## Checking sphericity assumption
+
+* Recall that, instead of homogeneity of variances, when working with a **within-subjects factor**, the variances assumption that we check is called the **sphericity assumption**, which states that *the variances of the differences between scores in all combinations of related groups are equal*. 
+
+We can check the *sphericity assumption* using **Mauchly's Test of Sphericity**.
+```{r}
+sphericity_test <- anova_test(data = data, dv = score, wid = ID, within = exam)
+
+sphericity_test$`Mauchly's Test for Sphericity`
+```
+
+* Good - Mauchly's test of the sphericity assumption is non-significant.
+
+
+# Interpret model output
+
+Let's examine the output using `anova()`.
+```{r}
+# Fitting the model
+anova(model)
+```
+
+
+>> Question: Is there a significant linear relationship between number of servings and nap lengths?
+
+
+>> Question: Is there a significant quadratic relationship between number of servings and nap lengths?
+
+
+
+
+Now, let's examine the output using `summary()`:
+```{r}
+summary(model)
+```
+
+>> Question: Interpret the meaning of each of the parameter estimates.
+
+b0:
+b1:
+b2:
+
+
+# Sample APA Summary
+
+Using a polynomial regression analysis, we examined whether there was a significant linear and/or quadratic trend in the average grades received by students on three different exams given across the course of one term. 
+
+There was a significant linear trend in students' exam scores, *F*(1, 18) = 7.77, *p* = .012. This linear trend was due to final exam scores (*M* = 67.60, *SD* = 20.00) being significantly higher than scores on midterm 1 (*M* = 61.00, *SD* = 19.50), *b* = 6.60, *t*(18) = 2.79, *p* = .012. 
+
+There was also a significant quadratic trend in students' exam scores, *F*(1, 18) = 104.82, *p* < .001. This was due to scores on midterm 2 (*M* = 85.30, *SD* = 15.80) being significantly higher than the average score across both midterm 1 (*M* = 61.00, *SD* = 19.50) and the final exam (*M* = 67.60, *SD* = 20.00), *b* = 21.00, *t*(18) = 10.24, *p* < .001.
+
+
+
+# Contrast Codes for 4+ groups
+
+You can find the set of orthogonal polynomial contrast codes that can be used for a categorical predictor with 4 or 5 levels on **page 197** of your model comparison textbook. They're also below for your reference:
+
+Contrast Codes for a Categorical Predictor with 4 Ordinal Levels:
+
+# Linear      -3 -1  1  3
+# Quadratic    1 -1 -1  1
+# Cubic       -1  3 -3  1
+
+Contrast Codes for a Categorical Predictor with 5 Ordinal Levels:
+
+# Linear      -2 -1  0  1  2
+# Quadratic    2 -1 -2 -1  2
+# Cubic       -1  2  0 -2  1
+# Quartic      1 -4  6 -4  1

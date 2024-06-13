@@ -1,0 +1,398 @@
+---
+title: "Lab 4 - Linear Regression with Continuous by Continuous Interactions"
+output:
+  html_document:
+    theme: cosmo
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+  word_document:
+    toc: yes
+    toc_depth: '3'
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include = FALSE}
+library(rio) # importing data
+library(psych) # descriptive statistics and alpha
+library(tidyverse) # data wrangling
+library(ggplot2) # data visualizations
+library(pwrss) # for power analysis
+library(epiDisplay) # for frequency tables
+library(broom) # for extracting model's residuals
+library(lsr) # for etaSquared() 
+library(olsrr) # for multicollinearity measures
+library(car) # for Anova() function
+
+# install.packages("sjPlot")
+library(sjPlot) # for unpacking interaction effects
+
+# install.packages ("reghelper")
+library(reghelper) # for simple slopes analysis
+```
+
+# Research Scenario
+
+**Example:** Last week, we examined a model with multiple continuous predictors. However, we did not investigate whether there was an **interaction effect** between any of the continuous predictors. In other words, we have not yet examined whether the relationship between predictor 1 and Y *varies depending on the level of predictor 2*. 
+
+The data set we're using in today's lab contains the following variables:
+
+* row = Row number
+* pid = Participant ID number
+* consc = Participant's conscientiousness 
+* exercise = The number of days a week the participant reported that they exercise
+* soc_supp = The participant's perception of the amount of social support they have from the people around them from 1 (none at all) to 5 (a great deal)
+* sr_health = Participant's self-reported health
+
+Let's say a researcher is interested in **whether the relationship between conscientiousness and self-reported health scores varies depending on the number of days people exercise per week**.
+
+
+
+# Model Comparison
+
+This research question corresponds to the following model comparison:
+
+$$ModelA: Health_i = \beta_0 + \beta_1*Conscientiousness + \beta_2*Exercise + \beta_3*(ConscientiousnessXExercise) + \epsilon_i$$
+
+$$Model C: Health_i = \beta_0 + \beta_1*Conscientiousness + \beta_2*Exercise + \epsilon_i$$
+
+
+## Null Hypothesis
+
+The null hypothesis corresponding to this model comparison is:
+
+$$H_0: \beta_3\ = 0$$
+
+# Import Data
+
+```{r}
+data <- import("health.csv")
+```
+
+
+# Data Cleaning & Wrangling
+
+First, let's check the measure type that each variable was imported as.
+```{r}
+str(data)
+```
+
+
+Convert the variable's measures types as needed.
+```{r}
+data <- data %>%
+  mutate(row = as.factor(row),
+         pid = as.factor(pid))
+```
+
+
+# Descriptive Statistics
+
+Let's construct a descriptive statistics table that provides the mean and standard deviation for the key variables of interest in this study.
+```{r}
+descriptives_table <- data %>%
+  summarise(M_Consc = mean(consc),
+            SD_Consc = sd(consc),
+            M_Exercise = mean(exercise),
+            SD_Exercise = sd(exercise),
+            M_Health = mean(sr_health),
+            SD_Health = sd(sr_health))
+
+# raw table with no formatting
+descriptives_table
+
+# adding table formatting
+descriptives_table %>%
+  knitr::kable(digits = 2, col.names = c("Mean Conscientiousness", "SD Conscientiousness", "Mean Exercise", "SD Exercise", "Mean Health", "SD Health"), caption = "Descriptive Statistics for Conscientiousness and Health", format.args = list(nsmall = 2))
+```
+
+
+# Data Visualization
+
+We can create a scatterplot matrix using the `pairs.panels()` function to visualize the relationship between each pair of variables in the study.
+```{r}
+data %>%
+  dplyr::select(consc, exercise, sr_health) %>%
+  pairs.panels(lm = TRUE)
+```
+
+The relationship between each predictor, conscientiousness & exercise, and the outcome variable, self-reported health, appears to follow the pattern of a straight line.
+
+
+
+# Centering the Continuous Predictors
+
+Now that we're including a continuous X continuous interaction term in our model, it's **very important** that we center the continuous predictors *prior* to including them in the linear model.
+
+Centering the continuous predictors prior to running the model that includes the interaction effect between them will **reduce the multicollinearity between them and the interaction term**.
+
+Let's center the predictors, conscientiousness & exercise, below.
+```{r}
+data$consc_c <- c(scale(data$consc, center = TRUE, scale = FALSE))
+data$exercise_c <- c(scale(data$exercise, center = TRUE, scale = FALSE))
+```
+
+*Side note:* We're putting the scale() function side of the c() function to make sure the resulting variables are numeric.
+
+
+
+# Fit the Model
+
+Fit a linear model predicting `sr_health` from `consc_c`, `exercise_c`, and their interaction, `consc_c*exercise_c`. Call the object **model**.
+
+```{r}
+
+
+```
+
+
+
+# Assessing Multicollinearity
+
+Let's assess the multicollinearity of our model's predictors using the `ols_vif_tol()` function from the `olsrr` package. This is important to investigate when it's possible that the predictors in your model could be correlated.
+
+```{r}
+ols_vif_tol(model)
+```
+
+Either a low tolerance (below 0.20 is one rule of thumb) or a high VIF (above 5 or 10) is an indication of a problem with multicollinearity. Looks like multicollinearity does not pose an extreme problem with the current set of predictors!
+
+
+## What if we hadn't centered the predictors?
+
+What if we **hadn't** centered our continuous predictors before including them in a model that includes their interaction effect? Let's see. 
+
+Re-run the analysis, but this time predict `sr_health` from non-centered scores on `consc`, `exercise`, and the interaction between the two, `consc*exercise`. Call the resulting object **model_uncentered**.
+
+```{r}
+
+
+```
+
+Let's re-examine the multicollinearity diagnostics for this uncentered model:
+
+```{r}
+ols_vif_tol(model_uncentered)
+```
+
+Multicollinearity now poses a substantial issue! The presence of this multicollinearity would make it more difficult to parse apart the *unique* contribution of each predictor in the model. 
+
+We'll stick with the version of the model that uses the centered predictors.
+
+
+
+
+# Check whether model assumptions were met
+
+Next, let's check whether the assumptions of **1) normally distributed errors**, **2) independence of errors**, and 3) **homogeneity of variances** were met by the current model.
+
+## Checking whether errors are normally distributed
+
+### Distribution of the Residuals
+```{r}
+# storing table containing residuals
+augment_model <- augment(model)
+augment_model
+
+# plotting histogram of residuals
+ggplot(data = augment_model, aes(x = .resid)) + 
+  geom_density(fill = "purple") + # histogram of the residuals
+  stat_function(linetype = 2, # a normal distribution overlaid on top for reference
+                fun = dnorm, 
+                args = list(mean = mean(augment_model$.resid), 
+                                sd   =   sd(augment_model$.resid))) 
+```
+
+
+### Q-Q Plot
+```{r}
+ggplot(model) +
+  geom_abline() + 
+  stat_qq(aes(sample = .stdresid))
+```
+
+
+
+## Checking independence of errors
+
+```{r}
+# add the ID column to the table containing the residuals
+augment_model$pid <- data$pid
+
+# plot the ID numbers against the residuals
+ggplot(data = augment_model, aes(x = pid, y = .resid)) + 
+  geom_point() +  
+  geom_smooth(se = F) +
+  geom_hline(yintercept = 0)
+```
+
+
+
+## Checking homogeneity of variance
+
+```{r}
+plot(model, 1)
+```
+
+
+
+
+# Interpreting the Model Output
+
+Recall that we can examine the model output using different functions:
+
+* summary() & confint()
+* anova()
+
+Let's start with `summary()` and `confint()`.
+
+```{r}
+summary(model)
+confint(model)
+```
+
+
+
+## Interpreting Parameter Estimates in Models with Continuous Interaction Effects
+
+The best way to interpret the meaning of each parameter estimate is to rearrange the full model formula to express the "simple" relationship between one of the predictors and the outcome variable at different levels of the second predictor.
+
+The full estimate of the linear model equation is:
+
+$$Health' = 3.13 + 0.19*Consc_C + 0.53*Exercise_C - 0.12*Consc_CxExercise_C$$
+* b0 = 3.13
+* b1 = 0.19
+* b2 = 0.53
+* b3 = -0.12
+
+### Simple Relationship Between Predictor 1 and Y at Different Levels of Predictor 2
+
+Let's rearrange this formula to represent the **simple relationship between conscientiousness and self-reported health at different levels of exercise**.
+
+$$Health' = (3.13 + 0.53*Exercise_C) + (0.19 - 0.12*Exercise_C)*Consc_C$$
+
+* b0 = 3.13, the y-intercept for the relationship between conscientiousness and self-reported health when exercise_c = 0 (so at the mean of exercise)
+
+* b2 = 0.53, the change in the y-intercept for the relationship between conscientiousness and self-reported health for every 1-unit increase in exercise
+
+* b1 = 0.19, the slope for the relationship between conscientiousness and self-reported when when exercise_c = 0 (so at the mean of exercise)
+
+* b3 = -0.12, the change in the slope for the relationship between conscientiousness and self-reported health for every 1-unit increase in exercise
+
+
+### Simple Relationship Between Predictor 2 and Y at Different Levels of Predictor 1
+
+Now, you practice rearranging the full model to represent the **simple relationship between exercise and self-reported health at different levels of conscientiousness**. 
+
+Write the equation for the simple relationship between exercise and self-reported health by rearranging the terms in the full model equation below:
+
+
+$$Health' = $$
+
+Interpret the meaning of each of the parameter estimates in the context of this rearranged version of the full equation:
+
+* b0 =
+
+* b2 = 
+
+* b1 = 
+
+* b3 = 
+
+
+
+>> Question: Was there a significant interaction effect between conscientiousness and exercise? What does this mean?
+
+
+
+
+
+Next, let's examine the `Anova()` output:
+
+```{r}
+Anova(model, type = 3)
+```
+
+We should come to the same conclusion about the significance of the interaction effect based on the `Anova(model, type = 3)` output as we did using the `summary()` output.
+
+
+>> Question: Does Model A, which includes the interaction effect, make a significant improvement to the variance accounted for in self-reported health scores compared to Model C, which leaves out the interaction effect?
+
+Yes, the inclusion of the interaction between conscientiousness and exercise significantly improved the variance accounted for in self-reported health scores, *F*(1, 56) = 5.04, *p* = .029.
+
+
+By how much did Model A improve the variance accounted for compared to Model C? Let's see by calculating the effect size.
+
+
+
+# Effect Size 
+
+We can get two measures of effect size, $\eta^2$ and $\eta^2_{Partial}$ by passing our model to the `etaSquared()` function. 
+
+Here's a reminder of the formulas that are used to calculate each measure of effect size:
+
+$$\eta^2 = SSR/SS_{Total}$$
+
+$$\eta^2_{Partial} = SSR/SSE(C)$$
+
+```{r}
+etaSquared(model, type = 3)
+```
+
+
+
+# Unpacking the Interaction Effect
+
+## Plotting the Interaction
+
+We can unpack the nature of the conscientiousness by exercise interaction effect using the `plot_model()` function from the `sjPlot` package.
+
+When examining the relationship between a predictor (e.g., X1) and an outcome, Y, across different levels of a second predictor (e.g., X2), the second predictor variable is called a **moderator**. 
+
+Since the moderator variable is continuous, the researcher has to *choose values* of X2 at which to examine the relationship between X1 and Y. The most typical values that are chosen are +/- 1SD on X2.
+
+Let's plot the interaction effect between conscientiousness and self-reported health at the mean, +1 SD, and -1 SD on exercise.
+
+```{r}
+plot_model(model = model,
+           type = "int", # interaction
+           mdrt.values = "meansd") # which values of the moderator variable to use
+```
+
+>> Question: What appears to be the nature of the interaction effect?
+
+
+
+
+
+## Simple Slopes Analysis
+
+In addition to visualization the interaction effect, we may also wish to know **at which levels of exercise is there a significant relationship between conscientiousness and self-reported health**.
+
+**Simple slopes analysis** refers to analyzing the slope of the relationship between the first predictor (e.g., X1) and Y at specific values of the second predictor (e.g., X2). 
+
+We can perform a simple slopes analysis to test which of the slopes in our plot of the interaction effect are significantly, or non-significantly, different from zero using the `simple_slopes()` function from the `reghelper` package.
+
+```{r}
+simple_slopes(model)
+```
+
+* The first two columns indicate at which level of each predictor the slope of the other predictor is being tested. `sstest` means that the simple slope for this variable is being tested.
+* The `Tesst Estimate` column provides the simple slope, *b*, for the predictor marked `sstest` 
+* The remaining columns provide the `t-statistic`, `df`, `SE`, and `p-value` corresponding to a test of the significance of the simple slope on that row.
+
+>> Question: Describe the significance and direction of the relationship between conscientiousness and self-reported health at each level of exercise that was tested (mean, -1SD, and +1SD levels of exercise).
+
+
+
+
+
+

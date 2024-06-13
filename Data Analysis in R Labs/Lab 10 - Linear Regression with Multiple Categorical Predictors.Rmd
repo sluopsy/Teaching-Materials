@@ -1,0 +1,415 @@
+---
+title: "Linear Regression with Multiple Categorical Predictors"
+output:
+  html_document:
+    theme: cosmo
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+  word_document:
+    toc: yes
+    toc_depth: '3'
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include = FALSE}
+library(rio) # for importing data
+library(pwrss) # for power analysis
+library(psych) # descriptive statistics
+library(tidyverse) # data wrangling
+library(ggplot2) # data visualization
+library(broom) # for augment() function
+library(lsr) # for etaSquared() function
+library(car) # for leveneTest() function
+library(emmeans) # for unpacking model results
+```
+
+# Research Scenario
+
+Rejection sensitivity refers to the degree to which an individual is sensitive to interpreting ambiguous cues during interpersonal interactions as a sign of rejection. People high on rejection sensitivity may interpret a mildly negative experience, like not immediately receiving an answer to a text, more strongly as a sign of rejection compared to people low on rejection sensitivty. 
+
+A researcher is interested in how being high, versus low, on rejection sensitivity affects people's perception of how much an interaction partner likes them. The researcher is also interested in whether the partner's emotionality, i.e., whether the interaction partner shows happy or neutral emotions during the interaction, affects perceived liking. Finally, the researcher is interested in whether the effect of the interaction partner's emotionality differs depending on whether people are high, or low, on rejection sensitivity.
+
+
+# Import Data
+```{r}
+data <- import("reject.csv")
+```
+
+# Data Cleaning 
+
+Both of our independent variables should be **factors**. The dependent variable should be **integer** or **numeric**.
+
+IV1: Rejection Sensitivity (`rs`)
+* Low
+* High
+
+IV2: Partner Emotionality (`partner`)
+* Neutral 
+* Happy
+
+DV: Perceived liking
+* The degree to which the participant agrees with the statement, “My interaction partner likes me” from 1 (strongly disagree) to 7 (strongly agree)
+
+First, check each variable's measure type.
+```{r}
+str(data)
+```
+
+
+We need to convert `rs` and `partner` into factors. 
+
+**Remember:** when converting a *character variable* into a factor, the `factor` and `as.factor` functions re-order the levels of the IV to be in alphabetical order. Thus, we need to assign labels in alphabetical order. 
+
+(**Note**: This does *not* apply if you're converting an integer or numeric variable into a factor).
+```{r}
+data <- data %>%
+  mutate(rs = factor(rs, labels = c("High", "Low")),
+         partner = factor(partner, labels = c("Happy", "Neutral")))
+
+# Check the levels of each IV
+levels(data$rs)
+levels(data$partner)
+```
+
+
+
+# Descriptive Statistics
+
+Overall mean & SD for each level of **rejection sensitivity**:
+```{r}
+rs_means <- data %>%
+  group_by(rs) %>%
+  summarize(n = n(),
+            mean = mean(liking, na.rm = TRUE),
+            sd = sd(liking, na.rm = TRUE))
+
+# Descriptive Statistics Table
+rs_means
+
+# Graph of Descriptive Statistics
+ggplot(rs_means, aes(x = rs, y = mean, fill = rs)) +
+  geom_bar(stat = "identity") +
+  ggtitle("Average Perceived Liking at Each Level of Rejection Sensitivity") +
+  labs(x = "Rejection Sensitivity",
+       y = "Mean Perceived Liking") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+Overall mean & SD for each level of **partner emotionality**:
+```{r}
+partner_means <- data %>%
+  group_by(partner) %>%
+  summarize(n = n(),
+            mean = mean(liking, na.rm = TRUE),
+            sd = sd(liking, na.rm = TRUE))
+
+partner_means
+
+ggplot(partner_means, aes(x = partner, y = mean, fill = partner)) +
+  geom_bar(stat = "identity") +
+  ggtitle("Average Perceived Liking at Each Level of Partner Emotionality") +
+  labs(x = "Partner Emotionality",
+       y = "Mean Perceived Liking") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+Cell means for every combination of each level of **rejection sensitivity** and **partner emotionality**:
+```{r}
+cell_means <- data %>%
+  group_by(rs, partner) %>%
+  summarize(n = n(),
+            mean = mean(liking, na.rm = TRUE),
+            sd = sd(liking, na.rm = TRUE))
+
+cell_means
+
+ggplot(cell_means, aes(x = rs, y = mean, fill = partner)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  ggtitle("Average Perceived Liking at Each Combination of Rejection Sensitivity & Partner Emotionality") +
+  labs(x = "Rejection Sensitivity",
+       y = "Mean Perceived Liking") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+
+# Fit the Model
+
+Typically, when there are multiple IVs in one's study, the researcher is interested in examining three effects: 1) the main effect of IV1, 2) the main effect of IV2, and 3) the interaction effect. 
+
+## Contrast Coding
+
+**Rejection sensitivity** has two levels (high or low). Thus, we only need 2-1 = 1 contrast code to represent it in our model. Let's use **high = +1/2** and **low = -1/2** to contrast code rejection sensitivity.
+
+```{r}
+# Make sure you know the order of the levels before coding them
+levels(data$rs) 
+
+rs_code1 <- c(1/2, -1/2)
+contrasts(data$rs) <- rs_code1
+```
+
+**Partner emotionality** has two levels (happy or neutral). Thus, we need 2-1 = 1 contrast code to represent it in the model. Let's use **happy = 1/2** and **neutral = -1/2** to contrast code partner emotionality.
+
+```{r}
+levels(data$partner)
+
+partner_code1 <- c(1/2, -1/2)
+contrasts(data$partner) <- partner_code1
+```
+
+
+## Fit the Model
+
+To predict liking scores from rejection sensitivity, partner emotionality, and the interaction between these two categorical IVs, we can use the following syntax:
+```{r}
+model <- lm(liking ~ rs*partner, data = data)
+```
+
+- `rs*partner` represents the interaction between rejection sensitivity and partner emotionality
+  + When the interaction effect between two categorical IVs is included as a predictor, the main effects of each IV separately are automatically included 
+  + Thus, the above model is equivalent to: lm(liking ~ rs + partner + rs*partner, data = data
+
+
+
+# Checking whether model assumptions were met
+
+## Checking whether errors are normally distributed
+```{r}
+augment_model <- augment(model)
+augment_model
+
+ggplot(data = augment_model, aes(x = .resid)) + 
+  geom_density(fill = "purple") + 
+  stat_function(linetype = 2, 
+                fun = dnorm, 
+                args = list(mean = mean(augment_model$.resid), 
+                                sd   =   sd(augment_model$.resid))) 
+```
+
+* The residuals are somewhat bimodal, but the normality assumption is robust to violations, so let's continue. 
+
+
+## Checking independence of errors
+```{r}
+data$ID <- c(1:nrow(data))
+
+augment_model$ID <- data$ID
+
+ggplot(data = augment_model, aes(x = ID, y = .resid)) + 
+  geom_point() +  
+  geom_hline(yintercept = 0)
+```
+
+* Overall, there doesn't look to be a systematic pattern in the relationship between ID and the model's residuals.
+
+
+## Checking homogeneity of variances 
+
+```{r}
+plot(model, 1)
+```
+
+* Remember that we are looking to see that the amount of spread in the data at each level of condition is approximately the same. If you can't tell visually, you can also run **Levene's test**.
+
+```{r}
+leveneTest(liking ~ rs*partner, data = data)
+```
+
+* Good - levene's test for homogeneity of variances is non-significant.
+
+
+
+# Interpret model output
+
+Let's examine the output using `anova()`.
+```{r}
+# Fitting the model
+anova(model)
+
+# Effect Sizes
+etaSquared(model)
+```
+
+
+>> Question: Is there a significant main effect of rejection sensitivity?
+
+
+>> Question: Is there a significant main effect of partner emotionality?
+
+
+>> Question: Is there a significant interaction effect?
+
+
+Now, let's examine the output using `summary()`:
+```{r}
+summary(model)
+```
+
+>> Question: Interpret the meaning of each of the parameter estimates.
+
+b0:
+b1:
+b2:
+b3:
+
+
+## Interpreting the Main Effects
+
+### Main Effect of Rejection Sensitivity
+
+To examine the *direction* of the **main effect of rejection sensitivity**, we can look at the means for each level using the `emmeans` function:
+```{r}
+rs_means <- emmeans(model, ~rs)
+rs_means
+```
+
+We can also **graph the main effect** using the `emmip` function:
+```{r}
+# Graphing means only
+emmip(model, ~rs,
+      CIs = TRUE,
+      CIarg = list(lwd = 2, alpha = 0.3),
+      xlab = "Rejection Sensitivity",
+      ylab = "Perceived Liking")
+
+
+# Adding the data points overlaid on top
+emmip(model, ~rs,
+      CIs = TRUE,
+      CIarg = list(lwd = 2, alpha = 0.3),
+      xlab = "Rejection Sensitivity",
+      ylab = "Perceived Liking") +
+  geom_point(data = data, aes(x = rs, y = liking, color = rs))
+```
+
+
+To further interpret the main effect of rejection sensitivity, we can look at the **effect size** using *Cohen's d*:
+```{r}
+eff_size(rs_means, sigma = sigma(model), edf = df.residual(model))
+```
+
+
+
+### Main Effect of Partner Emotionality
+
+To examine the *direction* of the **main effect of partner emotionality**, we can look at the means for each level using the `emmeans` function:
+```{r}
+partner_means <- emmeans(model, ~partner)
+partner_means
+```
+
+We can also **graph the main effect** using the `emmip` function:
+```{r}
+# Graphing means only
+emmip(model, ~partner,
+      CIs = TRUE,
+      CIarg = list(lwd = 2, alpha = 0.3),
+      xlab = "Rejection Sensitivity",
+      ylab = "Perceived Liking") 
+
+# Adding the data points overlaid on top
+emmip(model, ~partner,
+      CIs = TRUE,
+      CIarg = list(lwd = 2, alpha = 0.3),
+      xlab = "Partner Emotionality",
+      ylab = "Perceived Liking") +
+  geom_point(data = data, aes(x = partner, y = liking, color = partner))
+```
+
+
+To further interpret the main effect of partner emotionality, we can look at the **effect size** using *Cohen's d*:
+```{r}
+eff_size(partner_means, sigma = sigma(model), edf = df.residual(model))
+```
+
+
+### Interaction Effect 
+
+The easiest way to examine the pattern of an **interaction effect** is by looking at a table of the cell means, or even better, at a graph of the interaction effect.
+
+First, let's look at the cell means using the `emmeans` function:
+```{r}
+cell_means <- emmeans(model, ~rs*partner)
+cell_means
+```
+
+
+Second, let's look at a graph of the interaction effect using the `emmip` function: 
+```{r}
+emmip(model, partner ~ rs,
+      CIs = TRUE,
+      CIarg = list(lwd = 2, alpha = 0.3),
+      xlab = "Rejection Sensitivity",
+      ylab = "Perceived Liking")
+```
+
+
+>> Question: How would you interpret the significant interaction effect?
+
+
+
+
+# Simple Effects Analysis
+
+Simple effects are used to examine the effect of IV1 on the DV separately for each level of IV2. 
+
+In this case, that means we can look at the effect of **rejection sensitivity** on **perceived liking** separately for each level of **partner emotionality** (or vice versa).
+
+We can get simple effects using the `emmeans` function together with the `contrast` function:
+```{r}
+emmeans(model, ~ rs*partner) %>% 
+  contrast(interaction = "consec", # compares consecutive groups
+           simple = "rs", # variable which you would like the simple effect of 
+           by = "partner", # variable at whose levels you would like the simple effects of the previously named variable
+           adjust = "none") # adjust can be used to choose a post-hoc comparison correction 
+```
+
+Interpretation of Simple Effects of Rejection Sensitivity:
+
+When interpreting the simple effects, it's helpful to reference the table of cell means:
+```{r}
+cell_means 
+```
+
+* When the interaction partner displayed happy emotions during the interaction, there was no significant difference in how much people low, versus high, on rejection sensitivity perceived that their interaction partner liked them, $M_{Diff}$ = -0.45, *t*(76) = -1.77, *p* = .081.
+
+* When the interaction partner displayed neutral emotions during the interaction, people low on rejection sensitivity perceived that the partner liked them significantly more compared to people high on rejection sensitivty, $M_{Diff} = 3.75, t(76) = 14.75, p < .001$.
+
+
+
+Vice versa, we could also look at the effect of **partner emotionality** on **perceived liking** separately for each level of **rejection sensitivity**:
+```{r}
+emmeans(model, ~ rs*partner) %>%
+  contrast(interaction = "consec",
+           simple = "partner",
+           by = "rs",
+           adjust = "none")
+```
+
+
+>> Question: How would you interpret the simple effects of partner emotionality at each level of rejection sensitivity?
+
+
+
+
+Finally, we could ask whether the effect of rejection sensitivity on perceived liking was **significantly different** depending on whether the interaction partner was showing happy, or neutral, emotion:
+```{r}
+emmeans(model, ~ rs*partner) %>%
+  contrast(interaction = "consec")
+```
+
+* The effect of rejection sensitivity on perceived liking when the interaction partner displayed neutral emotions ($M_{Diff} = 3.75$) was significantly stronger than when the interaction partner displayed happy emotions during the interaction ($M_{Diff} = -0.45$), $t(76) = 11.68, p < .001$.
+
+(Notice that this is the same as the value that was being tested by the interaction effect in the overall model!)

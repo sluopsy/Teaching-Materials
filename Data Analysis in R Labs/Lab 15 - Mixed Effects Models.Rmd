@@ -1,0 +1,279 @@
+---
+title: "Untitled"
+output:
+  html_document:
+    theme: cosmo
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+  word_document:
+    toc: yes
+    toc_depth: '3'
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include = FALSE}
+# Libraries
+library(rio) # importing data
+library(psych) # descriptive statistics
+library(tidyverse) # data wrangling
+library(knitr) # for knitting
+library(ggplot2) # data visualization
+library(emmeans) # for estimated marginal means
+library(lme4) # for lmer() function
+library(lmerTest) # for p-values in the lmer() output
+library(sjPlot) # for plotting model results
+
+# install.packages("Polychrome")
+library(Polychrome) # for additional color palettes
+```
+
+
+Example: A personality psychologist is interested in whether personality changes during early adolescence. Specifically, the researcher is interested in whether young people's levels of extraversion change as they get older. The researcher also wants to control for whether people live in a context that is tolerant, or intolerant, of changes in people's personalities. 
+
+The researcher measures the same 8 participants' extraversion scores at five different time points to examine how extraversion for these participants changes over time. The data are stored in `personality.csv`.
+
+The variables in this study include:
+
+* ID = a unique number associated with each participant
+
+* t1_extraversion = extraversion measured at time 1
+* t2_extraversion = extraversion measured at time 2
+* t3_extraversion = extraversion measured at time 3
+* t4_extraversion = extraversion measured at time 4
+* t5_extraversion = extraversion measured at time 5
+
+* t1_age = age measured at time 1
+* t2_age = age measured at time 2
+* t3_age = age measured at time 3
+* t4_age = age measured at time 4
+* t5_age = age measured at time 5
+
+* change tolerance = whether participant lives in a society that tolerates changes in people's dispositions
+  + 0 = Intolerant
+  + 1 = Tolerant
+
+# Import data
+
+```{r}
+data <- import("personality.csv")
+head(data)
+```
+
+Notice the data is in **wide format** because scores on the variables are *spread out across multiple columns*. Specifically, participants' scores on `extraversion` and `age` are spread out. 
+
+To perform the analysis, the data needs to be in **long format**. We want scores for `extraversion` and `age` to each be listed in a single column. We can convert the data to long format using the `pivot_longer()` function. 
+
+# Convert data to long format
+
+When we worked with the `pivot_longer` function in 611, we used it to convert a single variable from wide format to long format like so:
+```{r}
+demo_data <- pivot_longer(data, 
+                          cols = c(t1_extraversion:t5_extraversion),
+                          names_to = "Time",
+                          values_to = "extraversion")
+head(demo_data)
+```
+
+However, this only works for converting a *single* variable from wide to long format. Notice that scores on `age` are still spread out across multiple columns.
+
+We can use the `pivot_longer` function to convert **multiple variables** from wide to long format by giving all of the original variables the same stem, followed by a separator, followed by the unique name of each variable. 
+
+In this case, all of the variables begin with the stem `t#` followed by the separator `_`. The extraversion variables are followed by the unique name `extraversion`, and the age variables are followed by the unique name `age`.
+
+```{r}
+data_long <- data %>%
+            pivot_longer(c(t1_extraversion:t5_extraversion,t1_age:t5_age),
+                     names_to = c("time", ".value"),
+                     names_sep = "_")
+head(data_long)
+```
+
+* This took the name stems, `t#`, and put them under a new column called `time`. It took the unique `.value` associated with the name given to the extraversion and age variables to separate scores for each of these variables into their own columns. 
+
+# Convert variable types
+
+```{r}
+str(data_long)
+
+data_long <- data_long %>%
+  mutate(ID = as.factor(ID),
+         time = as.factor(time),
+         change_tolerance = factor(change_tolerance, levels = c(0,1), labels = c("Intolerant", "Tolerant")))
+```
+
+
+# Descriptive Statistics
+
+```{r}
+data_long %>%
+  summarize(M_Extraversion = mean(extraversion),
+            SD_Extraversion = sd(extraversion),
+            M_Age = mean(age),
+            SD_Age = sd(age))
+
+data_long %>%
+  group_by(ID) %>%
+  summarize(M_Extraversion = mean(extraversion),
+            SD_Extraversion = sd(extraversion),
+            M_Age = mean(age),
+            SD_Age = sd(age))
+
+data_long %>%
+  group_by(change_tolerance) %>%
+  summarize(M_Extraversion = mean(extraversion),
+            SD_Extraversion = sd(extraversion),
+            M_Age = mean(age),
+            SD_Age = sd(age))
+```
+
+
+# Contrast code the categorical predictor
+
+```{r}
+contrasts(data_long$change_tolerance) <- c(-1/2,1/2)
+contrasts(data_long$change_tolerance)
+```
+
+
+# Center the continuous predictors
+
+```{r}
+data_long$age_c <- c(scale(data_long$age, center = TRUE, scale = FALSE))
+```
+
+
+# Fit the model
+
+`age` is a within-subjects predictor. This means we have multiple scores from the same participants on age. Since this violates the independence assumption underlying use of the `lm()` function, we must use `lmer()` to fit our model.
+
+It's recommended to start with a random intercept *and* slopes model. This allows us to examine whether variation in the model's intercepts and slopes driven by variations between the different participants in the relationship between age and extraversion. 
+
+`change_tolerance` is a between-subjects predictor, which we can also include in the model fit by `lmer()`. 
+
+
+Although it's recommend to start with the random intercept + slopes model rather than to assume that there is no variation in slopes due to participants, we're going to start with the simpler model: the random intercept model. 
+
+## Random Intercept Model 
+
+```{r}
+model_ints <- lmer(extraversion ~ age_c + change_tolerance + (1|ID), data = data_long)
+```
+
+Examine the output
+```{r}
+summary(model_ints)
+```
+
+Fixed effects: 
+
+Remember that we can interpret the fixed effects of the model as we would normally interpret the summary output from a model fit using `lm()`.
+
+* b0 = 
+* b1 = 
+* b2 = 
+
+
+Random effects:
+
+* Intercept: 
+  
+* Residual:
+
+
+
+## Visualizing Random Intercepts
+
+It's helpful when interpreting the random effects to also have a visualization. We can use the `plot_model` function to see how the model intercepts for the relationship between `age_c` and `extraversion` controlling for `change_tolerance` vary across participants.
+
+Plotting Random Intercepts
+```{r}
+# Create custom color palette with levels equal to the number of levels of the grouping variable (for this example, ID)`
+palette <- as.character(createPalette(8, c("#ff0000", "#00ff00", "#0000ff")))
+swatch(palette)
+
+plot_model(model_ints, 
+           type = "pred", 
+           terms = c("age_c","ID"), 
+           pred.type = "re", 
+           ci.lvl = NA,
+           colors = palette)
+```
+
+
+## Extracting the Intercepts 
+
+We can find the unique intercept associated with each participant by passing our model to the `coef()` function.
+
+```{r}
+coef(model_ints)
+```
+
+
+
+
+## Random Intercept + Slope Model
+
+```{r}
+model_slopes <- lmer(extraversion ~ age_c + change_tolerance + (1 + age_c|ID), data = data_long)
+```
+
+Examine the output:
+```{r}
+summary(model_slopes)
+```
+
+Fixed effects: 
+
+* b0 = 
+* b1 =
+* b2 = 
+
+
+Random effects:
+
+* Intercept:
+
+* age_c: 
+
+* Residual:
+
+
+## Visualizing Random Intercepts + Slopes
+
+```{r}
+# Create custom color palette with levels equal to the number of levels of the grouping variable (for this example, ID)`
+palette <- as.character(createPalette(8, c("#ff0000", "#00ff00", "#0000ff")))
+swatch(palette)
+
+plot_model(model_slopes, 
+           type = "pred", 
+           terms = c("age_c","ID"), 
+           pred.type = "re", 
+           ci.lvl = NA,
+           colors = palette)
+```
+
+
+## Extracting the Intercepts + Slopes
+
+```{r}
+coef(model_slopes)
+```
+
+
+# Comparing the model with random intercept + slope to the model with only randon intercept
+
+```{r}
+anova(model_ints, model_slopes)
+```
+
+

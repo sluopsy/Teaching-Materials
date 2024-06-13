@@ -1,0 +1,416 @@
+---
+title: "Lab 1 - Intro to R & Descriptives"
+output:
+  html_document:
+    theme: cosmo
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+  word_document:
+    toc: yes
+    toc_depth: '3'
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Purpose
+
+The purpose of today's lab is to start building and strengthening foundational coding skills in R. In labs, we take a functional and active approach to learning R. We believe that the easiest way to *learn* R is by *using* R. Giving you some building blocks and suggesting some strategies for overcoming common coding obstacles will allow you to begin exploring the language. In lab, you never need to actively memorize code chunks or functions. You will become proficient naturally with many hours of practice. Rather, the goal of lab is to expose you to what R can do so that you know what tools you have at your disposal when you are later working through a problem. 
+
+Today's lab will cover:
+
+1. [How to download and install R and RStudio](#gs)
+2. [The panes of RStudio](#rstudio)
+3. [How to create and use R Markdown Documents](#rmarkdown)
+4. [How to install and load packages](#packages) and...
+5. [How to import data into R](#data)
+
+
+After this brief introduction to R, we will move in to discussing how to produce **descriptive statistics** in R. In this section of the lab, we will additionally cover:
+
+1. [Basic Descriptives](#basic)
+2. [Summarizing a dataset](#summarize)
+3. [Visualizing Distributions](#dist)
+4. [Bivariate Descriptives](#bivar)
+5. [In-Line R Code](#inline)
+
+
+# Getting Started {#gs}
+
+So what is R? 
+
+In the simplest possible terms, R is a programming language used for conducting analyses and producing graphics. It is substantially more flexible than GUI-based statistics programs (e.g., SPSS, LISREL) but less flexible than other programming languages. This lack of flexibility is on purpose; it allows the code to be written in a far more efficient and intuitive way than other programming languages.
+
+Only one piece of software is required to get started using the R programming language and, confusingly, it is also called R. I will refer to it here as the *R Engine*. The R Engine essentially allows the computer to understand the R programming language, turning your lines of text into computer operations. Unlike other popular statistics programs (e.g., SPSS, SAS), the R Engine is free. [Instructions for downloading the R Engine](#download_r) are below.
+
+A second piece of software that is not required to use R but is nonetheless useful is [RStudio](https://www.rstudio.com). [RStudio](https://www.rstudio.com) is an *integrated development environment* (IDE) or, in potentially overly simplistic terms, a tool that makes interacting with the R Engine easier. [Instructions for downloading RStudio](#download_rstudio) are also below.
+
+
+
+## Downloading the R Engine {#download_r}
+
+1. You can access the links to download both R and Rstudio [here](https://posit.co/download/rstudio-desktop/). Make sure you choose the correct version of R for your operating system. 
+1. Once each file is downloaded, click on it to open it. Your operating system should guide you through the rest of the installation process. 
+
+*Note.* The same steps are used to update the R Engine: You install a new version and replace the old version in the process. 
+
+*Note.* To update [RStudio](https://www.rstudio.com) after it is already installed, all you have to do is navigate to `Help > Check for Updates` in the menubar. 
+
+
+***
+
+# Features of RStudio {#rstudio}
+
+As shown below, RStudio is split into four sections called panes. 
+As shown in the image below, an [RStudio](https://www.rstudio.com) session is split into four sections called panes: [the console](#rstudio_console), the [source pane](#rstudio_source), the [environment/history pane](#rstudio_environment), and the succinctly named [files/plots/packages/help pane](#rstudio_files).
+
+![](images/rstudio_panes.jpg)
+
+## The Console {#rstudio_console}
+
+In RStudio, the console is the access point to the underlying R Engine. It evaluates the code you provide it, including code called using the [the source pane](#rstudio_source). You can pass commands to the R Engine by typing them in after the `>`.
+
+
+## Source {#rstudio_source}
+
+The source pane shows you a collection of code called a script. In R, we primarily work with `R Script` files (files ending in `.R`) or `R Markdown` documents (files ending in `.Rmd`). In this class, we will mostly be working with `R Markdown` files. The document you are currently reading was created with an `R Markdown` document.
+
+## Environment/History {#rstudio_environment}
+
+The environment/history pane shows, well, your environment and history. Specifically, if you have the "Environment" tab selected, you will see a list of all the variables that exist in your global environment. If you have the "History" tab selected, you will see previous commands that were passed to the R Engine.  
+
+## Files/Plots/Packages/Help {#rstudio_files}
+
+The final pane---the files/plots/packages/help pane--includes a number of helpful tabs. The "Files" tab shows you the files in your current working directory, the "Plots" tab shows you a preview of any plots you have created, the "Packages" tab shows you a list of the packages currently installed on your computer, and the "Help" tab is where help documentation will appear. We will discuss packages and help documentation later in this lab.
+
+
+***
+
+# R Markdown {#rmarkdown}
+
+You will mostly be using `R Markdown` documents in this course. In fact, it is required that your homeworks be created using an `R Markdown` document. The following section will guide you the process of creating an `R Markdown` document. 
+
+## Creating an R Markdown Document
+
+1. Click on the blank piece of paper with the plus sign over it in the upper left-hand corner of RStudio.
+
+2. Click on `R Markdown...`.
+
+3. Enter the title of document and your name. I have chosen to title the document `lab1`.
+
+4. Save your RMarkdown document by clicking on `File` -> `Save`. 
+
+
+## Using an R Markdown Document
+
+The content of `R Markdown` documents can be split into two main types. I will call the first type *simple text*. Simple text will not be evaluated by the computer other than to be formatted according to markdown syntax. If you are answering a homework question or interpreting the results of an analysis, you will likely be using simple text. 
+
+Markdown syntax is used to format the simple text, such as italicizing words by enclosing them in asterisks (e.g., *this is italicized*) or bolding words by enclosing them in double-asterisks (e.g., **this is bold**). For a quick rundown of what you can do with R Markdown formatting, I suggest you check out the Markdown section of the [R Markdown Cheat Sheet](https://www.rstudio.com/wp-content/uploads/2015/02/rmarkdown-cheatsheet.pdf). 
+
+In addition to simple text, `R Markdown` documents support blocks (also called chunks) of R code. In contrast to simple text, the R code chunks **are** evaluated by the computer. Below is an R chunk.
+
+```{r} 
+
+``` 
+
+For your homeworks, you will want to include your analyses in these chunks. 
+
+
+## Knitting an R Markdown Document
+
+In order to knit an R Markdown document, you can either use the shortcut `command + shift + k` or click the button at the top of the R Markdown document that says `Knit`. The computer will take several seconds (or, depending on the length of the R Markdown document, several minutes) to knit the document. Once the computer has finished knitting the document, a new document will appear in the same location that the `R Markdown` document is saved. In this example, the new document will end with a `.html` extension. 
+
+
+***
+
+# Installing & Loading Packages {#packages}
+
+## Installing packages
+
+To install a package onto your computer, you simply pass the name of the package to install.packages(). If you don't already have the `psych` package installed, go ahead and uncomment the line below and run it to install `psych`.
+
+```{r}
+# install.packages("psych")
+```
+
+*Note.* When installing packages, the package name must be enclosed in quotes: `install.packages("psych")` NOT `install.packages(psych)`. You generally only need to install a package once.
+
+
+## Loading packages
+
+Just because we’ve installed a package to our computer doesn’t mean we have access to its functions. Buying a toolbox doesn’t necessarily give you access to its tools. You also have to open the toolbox. To open `psych` and load its functions, we use `library()`.
+
+```{r}
+library(psych)
+```
+
+***
+
+# Importing Data into R {#data}
+
+Data is often stored in a separate data file that needs to be imported into R in order to begin performing statistics on the variables it contains. 
+
+For this example, we will be using the planets data set from Star Wars. [The data can be downloaded here](https://docs.google.com/spreadsheets/d/1W577PILjAkOSTNw7r85jjHrJaaXuOkiPuQcu2yA6F58/export?format=xlsx). Move the data file to a folder you can navigate to from your current working directory.
+
+The best way to import data is using the `import` function from the `rio` package. If you don't already have this package installed, uncomment and run the line below to install it. Then, load the package.
+
+```{r}
+# install.packages("rio")
+library(rio)
+```
+
+Let's use the `import` function to navigate to the data set and import it. 
+```{r}
+planets_data <- import("data/sw_planets.xlsx") # Modify this line to apply to where you've stored the data on your personal computer
+```
+
+Take a look to make sure it is what you expected:
+```{r}
+head(planets_data)
+```
+
+***
+
+
+# Descriptive Statistics
+
+
+For this section of the lab, we'll use the 2015 World Happiness Report dataset. 
+
+1. [Download the data here](https://happiness-report.s3.amazonaws.com/2023/DataForTable2.1WHR2023.xls). Store it in a folder you can navigate to from your working directory.
+
+2. We will need functions from the `rio` and `psych` packages. Load these libraries if you haven't already.
+
+```{r}
+# load libraries
+library(rio)
+library(psych)
+```
+
+3. Import the World Happiness data that you just downloaded.
+
+```{r}
+world_happiness <- import("data/DataForTable2.1WHR2023.xls") # Modify this folder path to apply to your personal computer
+```
+
+We can take a peek at the data using the `str()` function, which shows us the structure of the dataset. This tells us we have a data frame with 136 observations of 8 different variables: `Country`, `Happiness`, `GDP`, `Support`, `Life`, `Freedom`, `Generosity` and `Corruption`.
+
+```{r}
+str(world_happiness)
+```
+
+We can also look at the first few rows of the data frame using `head()`. Notice that there are some `NA’s`, indicating that there is missing data. This will become important later.
+
+```{r}
+head(world_happiness)
+```
+
+
+# Basic Numerical Statistics{#basic}
+
+## Measures of Central Tendency
+
+For a given set of observations, measures of central tendency allow us to get the “gist” of the data. They tell us about where the “average” or the “mid-point” of the data lies. 
+
+Let's look at the variable called `'Healthy life expectancy at birth'` from the `world_happiness` data set. This variable contains values specifying the healthy life expectancy of people born around the world.
+
+### Mean 
+
+The mean is the arithmetic average of a set of values. We can get the mean in R using the base R function `mean()`.
+
+Try calculating the mean healthy life expectancy using the following code:
+```{r}
+mean(world_happiness$`Healthy life expectancy at birth`)
+```
+
+Real data usually has missing values! The `mean()` function won't work if there are NAs without specifying what R should do with those missing values.
+
+The simplest, but perhaps not always ideal, way of handling missing values on a variable is to add the argument `na.rm = TRUE`. This means R will remove all missing values prior to calculating the mean.
+
+```{r}
+mean(world_happiness$`Healthy life expectancy at birth`, na.rm = TRUE)
+```
+
+Now, we can see that the average healthy life expectancy for people born around the world is 63.29 years.
+
+
+### Median
+
+The median is the middle value of a set of observations: 50% of the data points fall below the median, and 50% fall above. 
+
+To find the median, we can use the `median()` function. Again, if the variable has missing values, we need to add `na.rm = TRUE` (later in the course we will discuss other options for handling missing data other than simply removing them).
+
+```{r}
+median(world_happiness$`Healthy life expectancy at birth`, na.rm = TRUE)
+```
+
+The median healthy life expectancy for people born around the world is 65.05.
+
+
+### Mode
+
+Base R does not have a built in function for calculating the mode. However, we can use the `mfv` function from the `statip` package. Uncomment and run the line below to install the package if it's not already installed on your computer. Notice that we again added `na.rm = TRUE` to tell R how to handle missing values.
+
+```{r}
+# install.packages("statip")
+library(statip)
+
+mfv(world_happiness$`Healthy life expectancy at birth`, na.rm = TRUE)
+```
+
+The most frequently occurring healthy life expectancy values across the various countries that were sampled are 65.80, 66.60, and 70.00 years. 
+
+
+## Measures of Variability
+
+### Minimum and Maximum
+
+Let's find the minimum and maximum healthy life expectancies for people born around the world. 
+```{r}
+min(world_happiness$`Healthy life expectancy at birth`, na.rm = TRUE)
+max(world_happiness$`Healthy life expectancy at birth`, na.rm = TRUE)
+```
+
+The minimum is only 6.72! And the maximum is 74.48.
+
+### Range
+
+The range gives us the distance between the smallest and largest value in a dataset. You can find the range using the diff() function in combination with the range() function.
+
+```{r}
+diff(range(world_happiness$`Healthy life expectancy at birth`, na.rm = TRUE))
+```
+
+The distance from the smallest to the largest healthy life expectancy is 67.76 years.
+
+
+### Interquartile Range
+
+We can get the raw quantiles using the `quantile()` function, and then the `IQR()` function to get the interquartile range, which is the distance from the first to the third quantile (IQR = Q3 - Q1). Remember to include the argument `type = 2`. (If you would like to read about all the different ways that quantiles can be calculated, run ?quantile in the console).
+```{r}
+quantile(world_happiness$`Healthy life expectancy at birth`, probs = seq(0,1,0.25), type = 2, na.rm = TRUE)
+
+IQR(world_happiness$`Healthy life expectancy at birth`, type = 2, na.rm = TRUE)
+```
+
+
+### Variance and Standard Deviation
+
+To find the variance and standard deviation, we use `var()` and `sd()`, respectively.
+
+```{r}
+var(world_happiness$`Healthy life expectancy at birth`, na.rm = TRUE)
+```
+
+The variance, or the average squared distance from the mean, is 47.63. This is not a very interpretable description of variability.
+
+```{r}
+sd(world_happiness$`Healthy life expectancy at birth`, na.rm = TRUE)
+```
+
+The standard deviation, which is the square root of the variance, is 6.90. This is a more interpretable description of how much scores tend to vary from the mean.
+
+### Mean Absolute Deviation
+
+Like we spoke about in class, the mean absolute deviation is actually a measure of how much the scores in a set of data tend to deviate from the mean on average. You can get the mean absolute deviation using the `madstat()` function from the `ie2misc` package. 
+
+```{r}
+# install.packageS("ie2misc")
+library(ie2misc)
+
+madstat(world_happiness$`Healthy life expectancy at birth`, na.rm = TRUE)
+```
+
+
+Not to be confused with...
+
+### Median Absolute Deviation
+
+The `mad` statistic provided by the `describe()` function (which you'll use to obtain descriptive statistics next) corresponds to the **median absolute deviation**, which is the average deviation from the median. This measure of variability is useful when there are extreme values on your variable, particularly if you're looking for a measure of variability to use to help with identifying outliers. 
+
+
+# Summarizing a Dataset{#summarize}
+
+So far we have been calculating various descriptive statistics (somewhat painstakingly) using an assortment of different functions. So what if we have a dataset with a bunch of variables we want descriptive statistics for? Surely we don’t want to calculate descriptives for each variable by hand…
+
+Fortunately for us, there is a function called `describe()` from the {psych} package, which we can use to quickly summarize a whole set of variables in a dataset.
+
+You can apply the `describe()` function to a single variable:
+```{r}
+describe(world_happiness$`Healthy life expectancy at birth`)
+```
+
+Or to an entire data set:
+```{r}
+describe(world_happiness)
+```
+
+
+# Visualizing Distributions{#dist}
+
+## Frequency Table
+
+A simple frequency table can be produced using the `count()` function from the `plyr` package. Go ahead and uncomment & run the line to install `plyr` if you do not have it already.
+```{r}
+# install.packages("plyr")
+library(plyr)
+
+count(world_happiness$`Healthy life expectancy at birth`)
+```
+
+We can get a more detailed frequency table using `tab1()` from the `epiDisplay` package.
+
+```{r}
+# install.packages("epiDisplay")
+library(epiDisplay)
+
+tab1(world_happiness$`Healthy life expectancy at birth`, decimal = 0)
+```
+
+Clearly, since there are so many unique values on our variable, these frequency tables are not much easier to look at than the data itself. It would probably be a good idea to create a new variable that groups years together into ranges and then construct the frequency table. You'll learn techniques for creating new variables & wrangling data into a desired form for analysis in next week's lab on **Data Wrangling**. 
+
+
+## Histogram 
+
+One common way of visualizing distributions is using a **histogram**, which plots the frequencies of different values for a given variable.
+
+This is what the base histogram looks like using the `hist()` function:
+```{r}
+hist(x = world_happiness$`Healthy life expectancy at birth`)
+```
+
+But we could also add a title and x-axis label:
+```{r}
+hist(x = world_happiness$`Healthy life expectancy at birth`, main = "Histogram of Healthy Life Expectancy Scores", xlab = "Healthy Life Expectancy at Birth (in years)")
+```
+
+You can also change the number of bins (i.e. bars) in your histogram using the breaks argument. Try different values and see how they affect how the histogram looks.
+
+
+## Boxplot
+
+We can also visualize distributions using a **boxplot**, which gives us different information. For a short guide on how to read boxplots, see [here](https://flowingdata.com/2008/02/15/how-to-read-and-use-a-box-and-whisker-plot/).
+
+```{r}
+boxplot(x = world_happiness$`Healthy life expectancy at birth`, main = "Boxplot of Happiness Scores")
+```
+
+
+## Scatterplot
+
+A **scatterplot** can be used to visualize the *relationship between two variables*. Let's say a researcher is interested in whether there is a relationship between *GDP* and *healthy life expectancy*.
+
+```{r}
+plot(world_happiness$`Log GDP per capita`, world_happiness$`Healthy life expectancy at birth`, xlab = "Log(GDP per Capita)", ylab = "Healthy Life Expectancy (in years)", main = "Scatterplot of Relationship Between GDP and Healthy Life Expectancy")
+```
+
+
+**These are just some basic graphs that can be produced using base R functions. We will have an entire lab soon dedicated to how you can create more sophisticated data visualizations using the `ggplot2` package.**

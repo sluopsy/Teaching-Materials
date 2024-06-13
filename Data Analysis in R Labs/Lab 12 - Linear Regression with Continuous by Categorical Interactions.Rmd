@@ -1,0 +1,347 @@
+---
+title: "Lab 7 - Linear Regression with Continuous by Categorical Interactions"
+output:
+  html_document:
+    theme: cosmo
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+  word_document:
+    toc: yes
+    toc_depth: '3'
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include = FALSE}
+library(rio) # importing data
+library(psych) # descriptive statistics and alpha
+library(tidyverse) # data wrangling
+library(ggplot2) # data visualizations
+library(broom) # for extracting model's residuals
+library(lsr) # for etaSquared() 
+library(car) # for Anova() function
+library(sjPlot) # for plotting interaction effects
+library(emmeans) # for unpacking interaction effects
+```
+
+
+# Research Scenario
+
+Today's dataset was inspired by a recent study by [Markowitz & Levine (2021)](https://journals.sagepub.com/doi/pdf/10.1177/1948550619898976?casa_token=kum1VwoltKAAAAAA:jQngdX1FojAVb_8GQF5ZGBAnRvMoK2dFdzcvIqFyOPRWTbyhQ1p0fWvzz0zZHS7i2LpJIr-VTA) (the data you will be working with has been simulated). 
+
+In this study, participants were asked to complete questions on a math worksheet and were told that they would earn $0.25 for every question they answered correctly. Half of the participants turned their worksheet into the researcher (the non-shredder condition) and half of the participants shredded their worksheet (the shredder condition) before self-reporting the number of questions they answered correctly. The researcher is interested in whether removing the potential to get caught lying has an effect on how honest people are when they report the number of questions they answered correctly. The researcher also continuously measured people's general honesty by having participants complete the honesty subscale of the HEXACO Personality Inventory (where responses are from 1 = extremely low honesty to 5 = extremely high honesty). 
+
+The researchers want to test whether or not there is an interaction effect between condition (non-shredder vs shredder) and general honesty when predicting the number of problems people claimed to have solved correctly.   
+
+The data set we're using in today's lab contains the following variables:
+
+* condition = Whether participants shredded their worksheet or not before turning it in 
+  + 0 = non-shredder
+  + 1 = shredder
+  
+* honesty = Score on the honesty subscale of the HEXACO personality inventory (1 = extremely low honesty, 5 = extremely high honesty)
+
+* claimed_solved = The number of math puzzles that participants claimed they answered correctly
+
+
+# Import Data
+
+```{r}
+data <- import("dishonesty.csv")
+```
+
+
+# Data Cleaning & Wrangling
+
+First, let's check the measure type that each variable was imported as.
+```{r}
+str(data)
+```
+
+
+Convert the variable's measures types as needed.
+```{r}
+data <- data %>% 
+  mutate(condition = factor(condition, 
+                            levels = c(0,1), # specify the order you would like the levels to be in
+                            labels = c("Non-shredder", "Shredder"))) # specify labels for each level 
+```
+
+
+# Descriptive Statistics
+
+A descriptive statistics table displaying the overall M and SD on each of the continuous variables:
+```{r}
+overall_descriptives <- data %>%
+   summarise(M_Honesty = mean(honesty),
+            SD_Honesty = sd(honesty),
+            M_Claimed_Solved = mean(claimed_solved),
+            SD_Claimed_Solved = sd(claimed_solved))
+
+overall_descriptives
+
+# adding table formatting
+overall_descriptives %>%
+  knitr::kable(digits = 2, col.names = c("Mean Honesty", "SD Honesty", "Mean Claimed Solved", "SD Claimed Solved"), caption = "Descriptive Statistics", format.args = list(nsmall = 2))
+```
+
+
+A descriptive statistics table displaying the M and SD on each of the continuous variables separately for each condition:
+```{r}
+descriptives_by_condition <- data %>%
+  group_by(condition) %>%
+  summarise(M_Honesty = mean(honesty),
+            SD_Honesty = sd(honesty),
+            M_Claimed_Solved = mean(claimed_solved),
+            SD_Claimed_Solved = sd(claimed_solved))
+
+descriptives_by_condition
+
+# adding table formatting
+descriptives_by_condition %>%
+  knitr::kable(digits = 2, col.names = c("Condition", "Mean Honesty", "SD Honesty", "Mean Claimed Solved", "SD Claimed Solved"), caption = "Descriptive Statistics", format.args = list(nsmall = 2))
+```
+
+
+# Contrast Coding the Categorical Predictor
+
+We'll contrast code the categorical predictor by assigning -1/2 to the non-shredder condition and +1/2 to the shredder condition. 
+
+```{r}
+ConditionCC <- c(-1/2, 1/2)
+contrasts(data$condition) <- ConditionCC
+
+contrasts(data$condition) # check the codes!
+```
+
+
+# Centering the Continuous Predictors
+
+We'll center the continuous predictor, honesty, to have a more meaningful y-intercept value in our resulting model.
+
+```{r}
+data$honesty_c <- c(scale(data$honesty, center = TRUE, scale = FALSE))
+```
+
+*Side note:* We're putting the scale() function side of the c() function to make sure the resulting variable is numeric.
+
+
+# Model Comparison
+
+This research question corresponds to the following model comparison:
+
+$$ModelA: ClaimedSolved_i = \beta_0 + \beta_1*ConditionCC + \beta_2*HonestyC + \beta_3*(ConditionCC*HonestyC) + \epsilon_i$$
+
+
+$$ModelC: ClaimedSolved_i = \beta_0 + \beta_1*ConditionCC + \beta_2*HonestyC + \epsilon_i$$
+
+
+## Null Hypothesis
+
+The null hypothesis corresponding to this model comparison is:
+
+$$H_0: \beta_3\ = 0$$
+
+
+# Fit the Model
+
+Fit a linear model predicting `claimed_solved` from `condition`, `honesty_c`, and their interaction, `condition*honesty_c`. Call the object **model**.
+
+```{r}
+
+```
+
+
+
+# Check whether model assumptions were met
+
+Next, let's check whether the assumptions of **1) normally distributed errors**, **2) independence of errors**, and 3) **homogeneity of variances** were met by the current model.
+
+## Checking whether errors are normally distributed
+
+### Distribution of the Residuals
+```{r}
+# storing table containing residuals
+augment_model <- augment(model)
+augment_model
+
+# plotting histogram of residuals
+ggplot(data = augment_model, aes(x = .resid)) + 
+  geom_density(fill = "purple") + # histogram of the residuals
+  stat_function(linetype = 2, # a normal distribution overlaid on top for reference
+                fun = dnorm, 
+                args = list(mean = mean(augment_model$.resid), 
+                                sd   =   sd(augment_model$.resid))) 
+```
+
+
+### Q-Q Plot
+```{r}
+ggplot(model) +
+  geom_abline() + 
+  stat_qq(aes(sample = .stdresid))
+```
+
+
+
+## Checking independence of errors
+
+```{r}
+# add ID column to the original data
+data$ID <- c(1:nrow(data))
+
+# add the ID column to the table containing the residuals
+augment_model$ID <- data$ID
+
+# plot the ID numbers against the residuals
+ggplot(data = augment_model, aes(x = ID, y = .resid)) + 
+  geom_point() +  
+  geom_smooth(se = F) +
+  geom_hline(yintercept = 0)
+```
+
+
+
+## Checking homogeneity of variance
+
+```{r}
+plot(model, 1)
+```
+
+
+
+
+# Interpreting the Model Output
+
+Recall that we can examine the model output using different functions:
+
+* summary() 
+* confint()
+* Anova()
+* etaSquared()
+
+Let's start with `summary()` and `confint()`.
+
+```{r}
+summary(model)
+confint(model)
+```
+
+
+
+## Interpreting Parameter Estimates in Models with Interaction Effects
+
+The full estimate of the linear model equation is:
+
+$$ClaimedSolved' = 5.31 + 1.12*condition + -0.46*honesty_c + 0.78*conditionXhonesty_c$$
+We're particularly interested in understanding the nature of the interaction between condition and general honesty. Remember that an interaction occurs when the relationship between one of the predictors (e.g., `honesty`) and the outcome variable (`claimed_solved`) *differs depending on* the level of a second predictor (e.g., `condition`).
+
+
+Let's examine the **simple relationship** between `honesty` and `claimed_solved` separately for each level of `condition`.
+
+
+
+### Simple Relationship Equations 
+
+**For the Non-shredder Condition:**
+
+To solve for the simple relationship equation for the non-shredder condition, fill in -1/2 for condition in the full model equation.
+
+$$ClaimedSolved' = 5.31 + 1.12*(-1/2) + -0.46*honesty_c + 0.78*(-1/2)Xhonesty_c$$
+which simplifies to...
+
+$$ClaimedSolved' = 5.31 - 0.56 + -0.46*honesty_c + -0.39Xhonesty_c$$
+$$ClaimedSolved' = 4.75 - 0.85*honesty_c$$
+
+In the non-shredder condition, the line representing the relationship between `honesty_c` and `claimed_solved` has a y-intercept of 4.75 and a slope of -0.85.
+
+
+
+**For the Shredder Condition:**
+
+Use the same process to solve for the simple relationship equation for the shredder condition by filling in +1/2 for condition in the full model equation.
+
+$$ClaimedSolved' = 5.31 + 1.12*(1/2) + -0.46*honesty_c + 0.78*(1/2)Xhonesty_c$$
+
+which simplifies to...
+
+$$ClaimedSolved' = 5.31 + 0.56 + -0.46*honesty_c + 0.39Xhonesty_c$$
+
+$$ClaimedSolved' = 5.87 - 0.07*honesty_c$$
+In the non-shredder condition, the line representing the relationship between `honesty_c` and `claimed_solved` has a y-intercept of 5.87 and a slope of -0.07.
+
+
+
+Next, let's examine the `Anova()` and `etaSquared` output:
+
+```{r}
+Anova(model, type = 3)
+etaSquared(model, type = 3)
+```
+
+
+>> Question: Was there a significant interaction effect between condition and honesty?
+
+
+
+
+
+# Unpacking the Interaction Effect
+
+## Plotting the Interaction
+
+We can plot the interaction effect using the `plot_model()` function from the `sjPlot` package.
+
+Let's visualize the relationship between general honesty and number of problems people claimed to have solved correctly separately for the non-shredder and shredder condition.
+
+```{r}
+plot_model(model = model,
+           type = "pred", 
+           terms = c("honesty_c","condition")) 
+```
+
+>> Question: What appears to be the nature of the interaction effect?
+
+
+
+
+
+## Simple Slopes Analysis
+
+We can perform simple slopes analyses using the `emtrends()` function from the `emmeans` package to see the value and significance of each of the simple slopes. 
+
+If we just use the `emtrends()` function by itself, we'll get a 95%CI around the simple slope. If we want to produce a p-value corresponding to each simple slope, wrap the wrap the `emtrends()` function inside the `test()` function.
+
+```{r}
+emtrends(model, ~condition, var = "honesty_c") # confidence intervals
+test(emtrends(model, ~condition, var = "honesty_c")) # p-values
+```
+
+>> Question: Describe the significance and direction of the relationship between `honesty` and `claimed_solved` at each level of `condition`.
+
+
+
+
+
+### Comparing Simple Slopes
+
+We can also analyze whether the simple slope in the non-shredder condition is significantly different from the simple slope in the shredder condition.
+
+```{r}
+emtrends(model, pairwise~condition, var = "honesty_c")
+```
+
+>> Question: Is the simple slope for the relationship between `honesty` and `claimed_solved` significantly different between the `non-shredder` and `shredder` conditions?
+
+
+
+
+

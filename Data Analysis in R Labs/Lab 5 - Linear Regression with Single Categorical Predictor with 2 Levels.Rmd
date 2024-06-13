@@ -1,0 +1,434 @@
+---
+title: "Linear Regression with a Single Categorical Predictor with 2 Independent Levels"
+output:
+  html_document:
+    theme: cosmo
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+  word_document:
+    toc: yes
+    toc_depth: '3'
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r include = FALSE}
+# Libraries
+library(psych) # descriptive statistics
+library(tidyverse) # data wrangling
+library(knitr) # for knitting
+library(car) # for Anova() function
+library(carData) # for today's dataset
+library(epiDisplay) # for frequency tables
+library(ggplot2) # data visualization
+library(broom) # for augment() function
+library(lsr) # for etaSquared() function
+library(pwr) # for power analysis
+library(pwrss) # for power analysis
+```
+
+
+# Steps of Performing the Analysis
+
+The general steps we will undergo to conduct this analysis include:
+
+0. A priori power analysis
+1. Import the Data
+2. Data Cleaning & Wrangling
+3. Descriptive Statistics
+4. Fit the model
+5. Check whether model assumptions were met
+6. Interpret model output
+7. Calculate effect size & 95%CIs
+
+**Example:** Today we will be analyzing data from a 1978 study on the effect of anonymity on people's tendency to cooperate with one another. The data is included in the {carData} package and is called `Guyer`. In this study, twenty participants were asked to participate in groups of four in a prisoner's dilemma game (although only the participant was actually particiapting - the other three members of the group were actors). In this game, each group member gets to decide whether they want to "cooperate" or "defect". 
+
+If everyone in the group chooses to cooperate with each other, each person in the group earns 15 dollars. If only one person in the group chooses to defect, the defector receives 20 dollars and the cooperators receive 10. If two people choose to defect, the defectors receive 15 dollars and the two cooperators receive 5. If three people defect, they each receive 10 dollars and the single cooperator receives 0. If everyone chooses to defect, they each receive 5 dollars.
+
+Each group made these decisions either publicly or anonymously. The groups in the public condition introduced themselves to each other at the start of the experiment and learned about the other group members' choices at the end. In the anonymous condition, the group members were never introduced to one another and never learned of the others' choices. Higher cooperation scores indicate that the members of the group chose to cooperate a greater number of times.
+
+The researcher wants to test whether or not decisions being made publicly versus anonymously has an effect on people's tendency to cooperate with one another.
+
+# Model Comparison
+
+The model corresponding to the null hypothesis, Model C, is:
+
+$$Model C: Cooperation_i = \beta_0 + \epsilon_i$$
+
+The model corresponding to the alternative hypothesis, Model A, is:
+$$Model A: Cooperation_i = \beta_0 + \beta_1*Condition + \epsilon_i$$
+Where `condition` is a categorical predictor with 2 levels:
+
+* Public
+* Anonymous
+
+# Hypotheses
+
+The null hypothesis is that which condition people were in (public vs anonymous) will not predict people's cooperation scores (aka, the slope of the model will equal 0):
+
+$$H_0: \beta_1\ = 0$$
+The alternative hypothesis states that the slope of the model will be different from zero (aka, which condition people were in *will* predict their cooperation scores):
+
+$$H_1: \beta_1\ \neq 0$$
+
+# A priori power analysis
+
+Before a researcher conducts a study, it is wise to perform an a priori power analysis for the researcher to determine the sample size they need to collect to achieve a desired level of power. The `pwrss.f.reg` function from the `pwrss` package can be used to perform power analyses when using regression models to test one's hypotheses. Typically, the minimum power researchers desire to achieve is 80% (i.e., if the null hypothesis is false, there will be an 80% chance of the researcher correctly detecting an effect).
+
+To use this function for a power analysis, four of the five following arguments need to be specified by the researcher. The value that the researcher wants to solve for should be set to `NULL`:
+
+* r2 = the estimated r-squared effect size
+* m = the number of predictors being tested in Model A
+* k = the total number of predictors in Model A
+* alpha = 0.05 (typically, in psychology we use an alpha of .05)
+* n = sample size 
+  + Set to `NULL` when you want to solve for the sample size needed to achieve a desired level of power (called an *a priori power analysis*).
+* power = The desired power level
+  + Set to `NULL` when you want to solve for the power you achieved with a given sample size (called a *post-hoc power analysis*).
+
+Cohen's (1988) Conventions for $R^2$ Effect Sizes:
+
+* $R^2$ = .02 is a small effect size
+* $R^2$ = .13 is a medium effect size
+* $R^2$ = .26 is a large effect size
+
+Ideally, a researcher would develop a good idea of the expected effect size based on previous findings for their topic area. If the researcher does not have a predicted effect size based on previous literature, then the effect size conventions listed above can be used instead. (For example, the researcher could state that they want to calculate the sample size that would be necessary to detect even a small effect size).
+
+For this example, let's say the previous literature suggests there should be a **large effect** of `condition` on people's `cooperation`. A large effect would be considered an $R^2 = 0.26$. We want to solve for the sample size that is needed to have an 80% chance (power = 0.80) of detecting a large effect of `condition` in the above model comparison. We will set `n` to `NULL` because the sample size is what we want to solve for. (**Note:** Only *one* of the options can be set to `NULL`).
+
+
+* r2 = .26 
+  + The estimated effect size (large effect, based on Cohen's conventions)
+* m = 1 
+  + We want to test the significance of a single predictor
+* k = 1
+  + There is only one predictor in Model A
+* alpha = 0.05
+  + Willingness to make a Type I error is 5%
+* n = sample size 
+  + Set to `NULL` so we can solve for the sample size
+* power = 0.80 
+  + Minimum desired power level is typically 80%
+  
+```{r}
+pwrss.f.reg(r2 = 0.26, 
+            m = 1, 
+            k = 1, 
+            alpha = 0.05,
+            n = NULL,
+            power = 0.80)
+```
+
+
+The power analysis says we need 25 participants (if a fraction, always round up) in the study to have an 80% chance of detecting a significant, large effect of our categorical predictor in the model.
+
+It's ideal for the power analysis to be carried out prior to collecting one's data. In the current scenario, we have data from a study that was conducted 45 years ago, so we can't really tell the authors to go back and do an a priori power analysis. We can see now, though, that the original study, which had 20 total participants, was slightly underpowered for detecting a large effect (and greatly underpowered for detecting anything smaller than a large effect!) 
+
+
+
+
+
+Now, let's get to analyzing our hypothesis.
+
+# Import the data
+```{r}
+data <- Guyer
+
+# Look at first few rows
+head(data)
+
+# Look at the entire dataset
+View(data) 
+```
+
+
+# Data Cleaning & Wrangling
+
+First, check that each variable was imported as the correct type.
+```{r}
+str(data)
+```
+
+Looks good. We can also look at descriptive statistics to see if we need to clean the data at all.
+```{r}
+# General descriptive statistics
+describe(data)
+
+# Frequency tables
+tab1(data$cooperation)
+tab1(data$condition)
+
+# Visualizations
+hist(data$cooperation)
+
+ggplot(data) +
+  geom_bar(aes(x = condition))
+```
+
+Everything looks good! The data is also already in the form we need it to be in (the IV and the DV are each their own columns).
+
+
+# Descriptive Statistics
+
+Now, we can get descriptive statistics that we would be interested in including in a write-up of this data. For instance, we would probably want to include a table that gives the mean (M) and standard deviation (SD) on cooperation for the public and anonymous conditions. You can certainly provide even more descriptive statistics than just these, though.
+
+```{r}
+data %>%
+  group_by(condition) %>%
+  summarise(mean = mean(cooperation),
+            sd = sd(cooperation))
+```
+
+We can make this table look a little nicer in our output by storing it in an object and then passing the table to the `kable` function from the `knitr` package. 
+
+The `kable` function lets us customize:
+
+  * The table title (`caption = `)
+  * Column names (`col.names = `)
+  * The number of digits to report (`digits = `)
+  * Adding `format.args = list(nsmall = 2))` ensures that two decimals are reported even when the second decimals is a trailing zero
+  
+```{r}
+descriptives_table <- data %>%
+  group_by(condition) %>%
+  summarise(mean = mean(cooperation),
+            sd = sd(cooperation))
+
+descriptives_table %>%
+  knitr::kable(digits = 2, col.names = c("Condition", "Mean", "SD"), caption = "Descriptive Statistics for Cooperation in the Public and Anonymous Conditions", format.args = list(nsmall = 2))
+```
+
+
+# Fit the Model
+
+We want to fit a model that predicts `cooperation` from `condition`. But first we need to 1) Convert `condition` to a factor if it isn't already a factor, and 2) Assign codes to each level of `condition`.
+
+```{r}
+class(data$condition) 
+```
+
+The categorical predictor, `condition`, is already a factor. If we needed to transform the categorical predictor to a factor, though, we would use:
+```{r}
+data$condition <- as.factor(data$condition)
+```
+
+Now, we need to choose a coding scheme and assign numerical values to each level of `condition`. As we discussed in lecture, **contrast codes** are usually the preferred coding method. Let's assign contrast codes to the levels of `condition`. 
+```{r}
+# check how the variable is currently coded and see the order of the levels
+contrasts(data$condition)
+
+# assign new contrast codes to the levels of condition
+contrasts(data$condition) <- c(-1/2,1/2)
+
+# see how the codes have been updated
+contrasts(data$condition)
+```
+
+Now that the categorical predictor is coded, we can fit our linear model using it as a predictor. To fit our linear model, we'll use the `lm()` function. This function uses the following general format:
+
+$$model <- lm(Y \sim X1 + X2 + ... + Xp, data = data)$$
+
+Where the outcome variable, Y, is on the left side of the tilde, `~`, and the predictor variables are on the right side.
+```{r}
+model <- lm(cooperation ~ condition, data = data)
+```
+
+
+# Check whether model assumptions were met
+
+Recall that we are making three assumptions about the model's errors (aka, the model's residuals):
+
+1. Errors are normally distributed
+2. Independence of errors
+3. Homogeneity of variance
+
+Let's check whether or not the model's residuals meet each of these assumptions.
+
+## Checking whether errors are normally distributed
+
+### Distribution of the Residuals
+
+There are two ways to check this assumption. First, we could look at a distribution of the model's residuals. 
+
+To graph the model's residuals, we first need to obtain the residuals and store them in an object. We can obtain the model's residuals by passing the model to the `augment` function from the `broom` package. This results in a table with columns corresponding to our model, like the value the model predicts for each participant (`.fitted`) and the residual for each participant (`.resid`). 
+
+We'll be graphing the values in the `.resid` column.
+```{r}
+# storing table containing residuals
+augment_model <- augment(model)
+augment_model
+
+# plotting histogram of residuals
+ggplot(data = augment_model, aes(x = .resid)) + 
+  geom_density(fill = "purple") + # histogram of the residuals
+  stat_function(linetype = 2, # a normal distribution overlaid on top for reference
+                fun = dnorm, 
+                args = list(mean = mean(augment_model$.resid), 
+                                sd   =   sd(augment_model$.resid))) 
+```
+
+They look pretty normally distributed!
+
+### Q-Q Plot
+
+Another way to check whether the errors are normally distributed is by looking at a Q-Q plot:
+```{r}
+ggplot(model) +
+  geom_abline() + 
+  stat_qq(aes(sample = .stdresid))
+```
+
+To meet the assumption, the points should be close to lying on the diagonal reference line. Looks like they do!
+
+
+## Checking independence of errors
+
+Ensuring that each of the participants in the sample (and thus their errors) are independent of each other should occur during data collection. 
+
+To test for non-independence when the research design does not inform you, though, you can look at a plot of the residuals with a variable that the errors should not correspond to (e.g., ID number, time).
+
+Let’s check whether we have violated the assumption of independence of errors by plotting residuals against ID numbers for the model.
+
+```{r}
+# create an ID column (let's assume the participants are listed in the order in which they participated in the study)
+data$ID <- c(1:nrow(data))
+
+# add the ID column to the table containing the residuals
+augment_model$ID <- data$ID
+
+# plot the ID numbers against the residuals
+ggplot(data = augment_model, aes(x = ID, y = .resid)) + 
+  geom_point() +  
+  geom_smooth(se = F) +
+  geom_hline(yintercept = 0)
+```
+
+We want there to not be a systematic pattern in the relationship between the residuals and a variable the residuals should not be related to, like ID. 
+
+## Checking homogeneity of variance
+
+Homogeneity of variance is the assumption that the variance of an outcome is approximately the same across all values of the predictor(s). We can use a **residuals plot** to examine whether our model has met this assumption. To obtain a residuals plot, pass the model to the `plot()` function and request the firs plot.
+```{r}
+plot(model, 1)
+```
+
+We are looking to see that the amount of spread in the data at each level of condition is approximately the same.
+
+If you are still unsure after examining whether this assumption has been met visually, you can use a test of the homogeneity of variances assumption, like **Levene's test**. We can run this test using the `leveneTest()` function from the `car` package.
+
+```{r}
+leveneTest(cooperation ~ condition, data = data)
+```
+
+Levene's test is a test of whether the variance in each group is **equal**. We *do not want the p-value to be less than .05* because that would indicate we have violated the assumption of homogeneity of variances. In this case, the p-value is greater than .05, so we have met the assumption of homogeneity of variances.
+
+
+We have met the model assumptions. Now, we can finally move onto interpreting our model's output.
+
+# Interpreting the Model Output
+
+First, let's pass the model to the `summary()` function.
+```{r}
+summary(model)
+```
+
+Let's unpack the output:
+
+* Estimate
+  + b0 = 48.30, the model's y-intercept
+  + b1 = 14.80, the model's slope
+  
+**Question:** Can you interpret the meaning of each parameter estimate in the context of the current research scenario?
+
+* Std. Error
+  + We're typically most interested in testing the significance of the predictor in our model (rather than the y-intercept). For that reason, let's just focus on the standard error for b1, which is $\sqrt(MSE/SS_x)$
+
+* t-value
+  + $t = b1/SE_{b1}$ = 14.80/5.561 = 2.661
+
+* Pr(>|t|)
+  + p = .016
+  + Condition was a **significant** predictor of participants' cooperation scores
+  
+* Residual standard error = 12.43
+  + $\sqrt(SSE(A)/df_{Error})$
+  + A description of the average error, aka, the average amount by which the model was off in trying to predict participant's actual scores
+  
+* Multiple R-squared = .2824
+  + The model including `condition` as a predictor accounted for approximately 28% of the variance in participants' cooperation scores
+  
+* Adjusted R-squared = .2425
+  + Multiple R-squared systematically overestimates the true proportion of variance accounted for by our model. Adjusted R-squared adjusts the estimate by penalizing the estimate for the number of predictors in the model (see lecture slides for the formula).
+  
+* F-statistic and p-value
+  + F(1, 18) = 7.084, p = .016
+  + This F-statistic corresponds to a test of the significance of the **overall model**, which will differ from the test of the significance of individual predictors in the model when we have more than one predictor in the model
+  
+  
+Second, let's look at our model output using the `Anova()` function:
+```{r}
+Anova(model)
+```
+
+* Sum Sq
+  + SSR = 1095.2
+    + df_Reduced = 1
+    + MSR (not shown) = SSR/df_Reduced = 1095.2
+    
+  + SSE(A) = 2783.0
+    + df_Error = 18
+    + MSE (not shown) = SSE(A)/df_Error = 154.61
+    
+* F value
+  + F(1, 18) = 7.08
+  + Remember that F = MSR/MSE = 1095.2/154.61 = 7.08
+  
+* Pr(>F)
+  + p = .016
+  + Condition was a **significant** predictor of participants' cooperation scores
+
+
+*Note:* The output using `Anova()` is mostly redundant with the output using `summary()`. The benefit of also looking at the `Anova()` output is that it additionally shows the **SSR** and **SSE(A)**, so we can see how the calculations we are performing "by-hand" in lecture are reflected in the analysis that we perform in R. 
+
+
+# Effect Size & Confidence Intervals
+
+## Effect Size
+
+Eta-squared is a commonly reported measure of effect size for each predictor in one's model. Eta-squared is equal to the SS for a particular predictor divided by the total SS. It can be interpreted as the proportion of variance in the outcome variable that's associated with a particular predictor in the model.
+
+```{r}
+etaSquared(model)
+```
+
+Once we start introducing more than one predictors into our models, we will discuss the difference between eta-squared and partial eta-squared.
+
+
+## Confidence Intervals
+
+To obtain confidence intervals around each of your model's parameters, pass the model to the `confint()` function:
+```{r}
+confint(model)
+```
+
+* For b0: 95%CI[42.46, 54.14]
+* For b1: 95%CI[3.12, 26.48]
+
+See whether you can interpret the meaning of each of these 95%CIs in the context of the current research scenario.
+
+
+# APA-Style Summary
+
+In this study, we examined whether people making a decision publicly or anonymously had an effect on their tendency to cooperate with one another. Using a linear regression analysis, we found that people who made their decision publicly (*M* = 55.70, *SD* = 14.80) cooperated significantly more with others compared to people who made their decision anonymously (*M* = 40.90, *SD* = 9.42), *F*(1, 18) = 7.08, *p* = .016, $R^2$ = 0.28, *b1* = 14.80, 95%CI[3.12, 26.48].
+
+
+

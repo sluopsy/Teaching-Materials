@@ -1,0 +1,348 @@
+---
+title: "Linear Regression with a Single Categorical Predictor with Related Levels"
+output:
+  html_document:
+    theme: cosmo
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+  word_document:
+    toc: yes
+    toc_depth: '3'
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r include = FALSE}
+# Libraries
+library(rio) # importing data
+library(psych) # descriptive statistics
+library(tidyverse) # data wrangling
+library(knitr) # for knitting
+library(epiDisplay) # for frequency tables
+library(ggplot2) # data visualization
+library(broom) # for augment() function
+library(emmeans) # for estimated marginal means
+
+#install.packages("rstatix")
+library(rstatix)
+
+# install.packages("lme4")
+library(lme4)
+
+# install.packages("lmerTest")
+library(lmerTest)
+```
+
+For today's lab, we'll be using the data set called `extraversion.csv` on Canvas.
+
+**Example:** A researcher is interested in testing whether personality traits are characteristics that are stable across situations or whether the environment shapes people's expression of personality traits. To test this research question, the researcher measures the number of times the same 16 participants express extraverted characteristics (e.g., initiating conversations with others, being enthusiastically talkative, etc.) in three different environments: at home, at school, and at a party. The researcher wants to know whether environment, overall, predicts how extraverted people's behaviors are. 
+
+
+# Import the data
+```{r}
+data <- import("extraversion.csv")
+```
+
+
+# Data Cleaning & Wrangling
+
+First, take a look at the data.
+```{r}
+head(data)
+```
+
+The data is currently in **wide** format because the participants' scores on the DV (extraversion) are spread out across multiple columns. However, we want the data to be in **long** format where there is a separate column for the IV (environment: home, school, party) and the DV (extraversion). 
+
+Note that this means each participant's ID number will occur three times in the `ID` column. In other words, we'll have a unique row for every observation. 
+
+We can change **wide data** to **long data** using the `pivot_longer()` function from the `tidyverse`. To use this function, we need to provide four arguments:
+
+* data = the name of the object containing the original data set
+* cols = the names of the columns that are spread out 
+* names_to = the name of the new variable you would like to create underneath which the spread out columns will become levels
+* values_to = the name of the new variable you would like to create containing the numerical values that were previously spread out across multiple columns
+
+```{r}
+data_long <- pivot_longer(data, 
+                          cols = c("home","school","party"),
+                          names_to = "environment",
+                          values_to = "extraversion")
+
+# Notice how the layout of the data changed
+head(data_long)
+```
+
+
+Next, check each variable's measure type:
+```{r}
+str(data_long)
+```
+
+* `ID` & `environment` should be transformed into factors
+
+```{r}
+data_long <- data_long %>%
+  mutate(ID = as.factor(ID),
+         environment = factor(environment, labels = c("home", "party", "school")))
+```
+
+And the data is already **clean**! (But with real-world data, you should inspect the data for any data entry errors that need to be fixed). 
+
+
+
+# Descriptive Statistics
+
+Let's start with descriptively examining the M and SD on `extraversion` across the three levels of `environment`.
+```{r}
+descriptives <- data_long %>%
+  group_by(environment) %>%
+  summarize(M = mean(extraversion, na.rm = TRUE),
+            SD = sd(extraversion, na.rm = TRUE))
+
+# Making the table look a little nicer
+descriptives %>%
+  knitr::kable(digits = 2, col.names = c("Environment", "Mean", "SD"), caption = "Descriptive Statistics for Extraversion Across Each Environment", format.args = list(nsmall = 2))
+
+# And we can plot the descriptives
+ggplot(descriptives, aes(x = environment, y = M, fill = environment)) +
+  geom_bar(stat = "identity") +
+  ggtitle("Average Extraversion Across Environments") +
+  labs(x = "Environment",
+       y = "Mean Extraversion") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+
+
+
+# Coding the Categorical Predictor
+
+Recall that the researcher wanted to know **whether environment, overall, predicts extraversion scores**. This means, when coding the categorical predictor, we are testing **whether the full set of codes used to capture the categorical predictor** make a significant improvement to the model compared to a model without the set full set of codes. 
+
+For environment, which has 3 levels, we need 3-1 = 2 contrast codes. Since we're not interested in making a particular mean comparison, we can specify any set of codes that follow the rules of contrast codes.
+
+* EnvCode1: home = 2/3, party = -1/3, school = -1/3
+* EnvCode2: home = 0, party = 1/2, school = -1/2
+
+```{r}
+EnvCode1 <- c(2/3, -1/3, -1/3)
+EnvCode2 <- c(0, 1/2, -1/2)
+
+contrasts(data_long$environment) <- cbind(EnvCode1, EnvCode2)
+
+contrasts(data_long$environment)
+```
+
+
+
+
+# Model Comparison 
+
+The model corresponding to the null hypothesis, Model C, is:
+
+$$Model C: Extraversion_i = \beta_0 + \epsilon_i$$
+
+The model corresponding to the alternative hypothesis, Model A, is:
+$$Model A: Extraversion_i = \beta_0 + \beta_1*EnvCode1 + \beta_2*EnvCode2 + \epsilon_i$$
+
+## The Null Hypothesis
+
+The null hypothesis is that both $\beta_1$ and $\beta_2$ will be equal to zero. 
+
+$$H_0: \beta_1\ = \beta_2\ = 0$$
+The alternative hypothesis is that *at least one of these model parameters is not equal to zero*.
+
+# Fit the Model
+
+Next, let's fit the model predicting `extraversion` from `environment` using the custom contrast codes we just created.
+
+**Since extraversion is a within-subjects factor**, we cannot simply use `lm` to fit the model. We need to fit the model using `lmer` from the `lme4` package, which allows us to tell the model that subjects provided multiple scores. 
+
+* To specify this in the model, we add `(1|ID)` to the predictor side of the formula. 
+
+```{r}
+model <- lmer(extraversion ~ environment + (1|ID), data = data_long)
+```
+
+
+
+# Check whether model assumptions were met
+
+## Checking whether errors are normally distributed
+
+By examining the distribution of the residuals.
+```{r}
+residuals <- model %>%
+  residuals() %>%
+  as.data.frame() # store the residuals as a data frame
+
+head(residuals) # check first few residuals
+colnames(residuals) <- "resid" # give it a column name
+
+ggplot(data = residuals, aes(x = resid)) + 
+  geom_density(fill = "purple") + 
+  stat_function(linetype = 2, 
+                fun = dnorm, 
+                args = list(mean = mean(residuals$resid), 
+                            sd = sd(residuals$resid)))
+```
+
+
+
+## Checking independence of errors
+
+The independence assumption assumes that *each participant's residuals are independent of the other participants' residuals*. The best way to ensure independence is by collecting a random sample of participants during data collection. Similarly to what we've done before, though, we can examine whether the model's residuals are associated with a variable that they should not be, like `ID`. 
+
+We want to examine whether there's a relationship `ID` and each participant's residuals within each of the three environment conditions.
+```{r}
+data_long$resid <- residuals$resid # add the residuals to the original data so we can play them by ID
+
+ggplot(data = data_long, aes(x = ID, y = resid)) +
+  geom_point() +
+  facet_wrap(~environment)
+```
+
+* Good - there doesn't look to be a systematic pattern between ID number and the model's errors within any of the environment conditions.
+
+
+## Checking the sphericity assumption
+
+The *sphericity assumption* is that the variances of the differences between scores in all combinations of related groups are equal. We can check whether we've met, or violated, the sphericity assumption using **Mauchly's Test of Sphericity**.
+
+To run the test, we'll use the `anova_test()` function from the `rstatix`` package. This function requires the following arguments:
+
+* data = the name of the data object
+* dv = the name of the DV
+* wid = the variable corresponding to ID numbers
+* within = the within-subjects variable 
+```{r}
+sphericity_test <- anova_test(data = data_long, dv = extraversion, wid = ID, within = environment)
+
+sphericity_test$`Mauchly's Test for Sphericity`
+```
+
+To examine whether we have violated the sphericity assumption, look at the results for **Mauchly's Test for Sphericity**. Like most statistical tests of our assumptions, we want to see a non-significant p-value, which would indicate we have *not* violated the assumption.
+
+In this case, Mauchly's Test for Sphericity *is not significant*, W = 0.997, p = .979. 
+
+Good - this indicates that the variance of the difference scores for each pair of related conditions are not significantly different!
+
+
+If we *had* violated the sphericity assumption, we should report one of the sphericity-corrected tests (the greenhouse-geisser or huynh-feldt corrections).
+```{r}
+sphericity_test$`Sphericity Corrections`
+```
+
+
+
+# Interpreting the Model Output
+
+Since we want to know whether environment *overall* was a significant predictor of extraversion, let's pass the model to the `anova()` function to get the overall F-statistic.
+
+```{r}
+anova(model)
+```
+
+>> Question: Was environment, overall, a significant predictor of extraversion scores?
+
+
+# Effect Size
+
+We can see in our output that **SSR = 78.292**. Let's store it in an object called `SSR`.
+```{r}
+SSR <- anova(model)$'Sum Sq'[1]
+SSR
+```
+
+
+We don't have SSE(C), though, which we need in order to calculate PRE. We can calculate **SSE(C)** by running model C and calculating SSE_C "by hand". 
+
+* We're running model C as just a normal linear model because it does not include a within-subjects predictor variable.
+```{r}
+model_C <- lm(extraversion ~ 1, data = data_long)
+
+SSE_C <- sum(residuals(model_C)^2) # SSE(C) = sum of the squared errors for Model C
+SSE_C
+```
+
+Then, we can calculate **PRE = SSR/SSE(C)**.
+```{r}
+PRE <- SSR/SSE_C
+PRE
+```
+
+Model A, which includes environment as a predictor, accounts for 42% more variance in extraversion scores than Model C.
+
+
+
+# Testing a Single Predictor
+
+When the overall effect of a categorical predictor is significant, that indicates there is a significant difference between *at least two conditions of the categorical predictor*, but the results don't tell us *which* two conditions are significantly different.
+
+To know which conditions are significantly different from one another, we can construct contrast codes that test a comparison between conditions that's of theoretical interest. Then, we can look at the significance of each individual predictor in the model.
+
+Recall that we used the following contrast codes to code `environment`:
+
+* EnvCode1: home = 2/3, party = -1/3, school = -1/3
+* EnvCode2: home = 0, party = 1/2, school = -1/2
+
+EnvCode1 compares the mean extraversion of participants at `home` to the mean extraversion of participants both at a `party` and at `school`.
+
+EnvCode2 compares the mean extraversion of participants at a `party` versus at `school`. 
+
+To test the significance of each individual predictor in the model, examine the `summary()` output:
+```{r}
+summary(model)
+```
+
+>> Question: Was there a significant difference in extraversion scores when participants were at home versus not at home?
+
+>> Question: Was there a significant difference in extraversion scores when participants were at a party versus at school?
+
+
+*Note:* If you wanted to test another comparison (for instance, home versus school), you would need to construct a new set of contrast codes that specify that comparison. 
+
+
+## Planned Comparisons vs Post-Hoc Comparisons
+
+It is generally preferred to do **planned comparisons**, which are theoretically motivated comparisons between groups that the researcher states they will analyze prior to conducting their analysis.
+
+However, **post-hoc comparisons** can also be used to explore whether there are unexpected significant differences between conditions. Post-hoc comparisons typically make every comparison possible between every pair of conditions. Because this results in *many significance tests* being conducted, a *correction to the p-value* must be made **to prevent inflating our chances of making a Type I error**.
+
+```{r}
+means <- emmeans(model, ~environment)
+
+pairs(means, adjust = "tukey")
+```
+
+
+## Confidence Intervals
+
+```{r}
+confint(model)
+```
+
+* For b0: 95%CI[4.11, 5.43]
+* For b1: 95%CI[-2.87, -1.69]
+* For b2: 95%CI[1.01, 2.37]
+
+
+
+# APA-Style Summary
+
+In this study, we examined whether extraversion scores varied depending on the environment people were measured in (at home, at school, or at a party). We found that there was a significant effect of environment on demonstration of extraverted characteristics, *F*(2, 30) = 40.44, *p* < .001. Furthermore, environment accounted for 42% (PRE = 0.42) of the variance in extraversion scores. 
+
+Specifically, when participants were at home (*M* = 3.25, *SD* = 1.61), they exhibited significantly fewer extraverted behaviors than the average extraversion levels demonstrated across the party (*M* = 6.38, *SD* = 1.75) and school (*M* = 4.69, *SD* = 1.20) conditions, *t*(30) = -7.57, *p* < .001, *b1* = -2.28, 95%CI[-2.87, -1.69].
+
+Additionally, participants exhibited significantly more extraverted behaviors when they were at a party compared to when they were at school, *t*(30) = 4.85, *p* < .001, *b2* = 1.69, 95%CI[1.01, 2.37].
+

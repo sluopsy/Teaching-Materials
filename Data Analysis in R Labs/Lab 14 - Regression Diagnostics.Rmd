@@ -1,0 +1,624 @@
+---
+title: "Lab 8 - Regression Diagnostics"
+output:
+  html_document:
+    theme: cosmo
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+  word_document:
+    toc: yes
+    toc_depth: '3'
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r include = FALSE}
+library(rio) # importing data
+library(psych) # descriptive statistics 
+library(tidyverse) # data wrangling
+library(ggplot2) # data visualizations
+library(broom) # for extracting model residuals & outlier indices
+library(olsrr) # for measures of multicollinearity
+library(car) # for Anova function
+
+
+# install.packages("mice")
+library(mice) # handling missing values
+# install.packages("naniar")
+library(naniar) # visualizaing missingness & MCAR test
+# install.packageS("miceadds")
+library(miceadds) # for mi.anova function
+```
+
+
+There are many potential issues that we can run into when dealing with real, messy data. 
+**Regression diagnostics** refers to the process of diagnosing potential issues with the data and deciding how to handle them.
+
+We'll cover the following regression diagnostics:
+
+1. [Outliers](#out)
+2. [Missing Data](#miss)
+3. [Violatons of Correctly Specified Form](#form)
+4. [Violations of Normality Assumption](#normal) 
+5. [Violations of Homogeneity of Variances Assumption](#homog)
+6. [Violations of Independence Assumption](#indep)
+7. [Multicollinearity](#multi)
+
+For today's lab, we're going to be working with the variables `happiness` and `extraversion` to demonstrate each of the potential issues you can run into when fitting a linear regression model. 
+
+Specifically, let's say we're interested in predicting `happiness` (outcome variable) from `extraversion` (predictor variable).
+
+
+# Outliers {#out}
+
+When performing regression diagnostics, **outliers should be dealt with first because they can be the cause of some of the other issues that we run into**, like non-normality or heteroskedatsicity. 
+
+
+Import data
+```{r}
+data_out <- import("outliers.csv")
+head(data_out)
+```
+
+Two types of outliers:
+
+* Univariate outliers: observations with an unusual value on a single predictor, either a predictor or the outcome variable
+
+* Multivariate outliers: observations with an unusual *set* of values compared to where the model lies
+
+## Univariate Outliers
+
+### Visualizing Univariate Outliers
+
+To visualize univariate outliers, we can use a boxplot for each of our variables.
+```{r}
+ggplot(data_out) +
+  aes(y = happiness) +
+  geom_boxplot() +
+  theme_minimal()
+
+ggplot(data_out) +
+  aes(y = extraversion) +
+  geom_boxplot() +
+  theme_minimal()
+```
+
+>> Question: Do you see any observations that are potential univariate outliers?
+
+
+
+### Univariate Outliers on Predictor Variables 
+
+To quantitatively assess which observations may be potential outliers on a predictor variable, we can calculate each observation's **leverage** (also called **hat**.)
+
+Leverage values are a measure of how much strongly a particular observation on the predictor variable contributes to the estimation of the model's slope, where $X_i$ values further from $\bar{X}$ contribute more to estimating the model's overall slope. We don't want an outlying value on a predictor to get to have *too* much influence on the estimate of the overall model's slope.
+
+To get leverage values, we'll first fit the model. Then, we'll get regression diagnostic statistics for the model by passing it to the `augment()` function from the `broom` package. The `.hat` column contains each observation's *leverage*. 
+```{r}
+# First, fit the model
+model_out <- lm(happiness ~ extraversion, data = data_out)
+
+# Obtain a table of regression diagnostics
+diagnostics <- augment(model_out)
+diagnostics
+```
+
+Let's add the leverage column (.hat) to the original data frame so we can see which participants each leverage value belongs to
+```{r}
+# Add leverage column to original data
+data_out <- cbind.data.frame(data_out, diagnostics$.hat)
+
+# Organize the data by descending leverage values
+data_out %>% 
+  arrange(desc(diagnostics$.hat)) %>%
+  head(n = 20)
+```
+
+Rules of thumb, especially for diagnostic tests, can vary depending on the source and are not necessarily universally agreed upon. However, they can be a good place to start when interpreting regression diagnostic tests for the first time.
+
+
+**Rule of thumb for interpreting leverage values:**
+
+* One rule of thumb is that leverage values greater than ${3p/n}$ are worth investigating further as a potential outlier.
+  + p is the number of parameter estimates 
+  + n is the sample size
+```{r}
+p <- 2 
+n <- nrow(data_out)
+
+(3*p)/n
+```
+
+This standard suggests we should investigate any observations with a leverage greater than 0.03636. None of our observations have a leverage that surpasses this value. 
+
+But, if we needed to, we could inspect observations with leverage values above this threshold by filtering them from the data set. 
+
+```{r}
+data_out %>%
+  filter(diagnostics$.hat > 0.03636)
+```
+
+This allows us to inspect how this person scored on all of the variables in the data set to gain insight into how to interpret their outlying value on our predictor variable.
+
+
+
+### Univariate Outliers on Outcome Variable
+
+To quantitatively assess which observations may be outliers on the outcome variable, we can calculate each observation's **studentized residual** by passing our model to the `rstudent()` function.
+
+Studentized residuals compare the distance between actual scores on Y, $Y_i$, from the value on Y predicted by a model that *excludes that observation*, $\hat{Y}_i$, in standardized units.
+```{r}
+# Obtain studentized residuals
+student_resids <- rstudent(model_out)
+
+# Combine with original data
+data_out <- cbind.data.frame(data_out, student_resids)
+
+# Organize the data by descending studentized residual values
+data_out %>% 
+  arrange(desc(abs(student_resids))) %>%
+  head(n = 20)
+```
+
+**Rule of thumb for interpreting studentized residuals:**
+
+* One rule of thumb is that studentized residuals greater than an absolute value of 3 are worth investigating further as potential outliers.
+
+Let's identify the observations in our data set with standardized residuals greater than 3 to inspect them further:
+```{r}
+data_out %>%
+  filter(abs(student_resids) > 3)
+```
+
+
+
+
+## Multivariate Outliers
+
+Multivariate outliers are outliers that have an unusual *combination* of scores on the set of variables included in the model. 
+
+One way of assessing whether an observation is a multivariate outlier is by assessing whether or not it **undue influence on the fit of the model**.
+
+
+### Visualizing Multivariate Outliers
+
+One straightforward way to visually inspect the data for multivariate outliers is to use bivariate scatterplots for each combination of outcome and predictor.
+
+```{r}
+ggplot(data_out, aes(x = extraversion, y = happiness)) +
+  geom_point()
+```
+
+>> Question: Do you see any observations that are potential multivariate outliers?
+
+
+
+
+### Measuring Multivariate Outliers Based on Model Influence
+
+Cook's Distance (aka, *Cook's D*) summarizes how much the regression model would change if you removed a particular case. It examines how different all of the fitted values would be with versus without a particular case.
+
+```{r}
+# Obtain Cook's D values
+cooks_d <- cooks.distance(model_out)
+
+# Combine with original data
+data_out <- cbind.data.frame(data_out, cooks_d)
+
+# Organize the data by descending Cook's D values
+data_out %>% 
+  arrange(desc(cooks_d)) %>%
+  head(n = 20)
+```
+
+**Rule of thumb for interpreting Cook's D:**
+
+* One rule of thumb is that Cook's D values greater than 0.5 are worth investigating further, and Cook's D values above 1.0 are absolutely having a large influence on the overall fit of the model.
+
+Let's investigate whether any of the observations have Cook's D values above this threshold.
+
+```{r}
+data_out %>%
+  filter(cooks_d > 0.5)
+```
+
+* A second rule of thumb is to look for a leap in Cook's D values amongst the values with the largest Cook's D values. 
+
+Based on our diagnostics, amongst the observations with the highest Cook's D values, there appears to be a leap in Cook's D values from 0.05 to 0.12.
+
+```{r}
+data_out %>%
+  filter(cooks_d > 0.05)
+```
+
+
+
+## Keep, Remove, or Recode Outliers
+
+Once potential outliers have been identified, we have three choices of how to deal with them:
+
+1) Keep the outlier
+2) Remove the outlier
+3) Recode the outlier
+
+With data errors (e.g., the incorrect value was input), it's very easy to decide what to do with the outlier. We either fix the value if we can infer with great confidence what the value should be corrected to or we remove it.
+
+With values that appear to reflect a real phenomenon (not an error), it's much harder to decide what to do with that outlier.
+
+Let's examine which observations are outliers based on all three of our diagnostic tests:
+
+```{r}
+# Outliers based on Predictor Variable (Leverage)
+data_out %>%
+  filter(diagnostics$.hat > 0.03636)
+
+# Outliers based on Distance from Model (Studentized Residuals)
+data_out %>%
+  filter(abs(student_resids) > 3)
+
+# Outliers based on Undue Model Influence (Cook's D)
+data_out %>%
+  filter(cooks_d > 0.05)
+```
+
+>> Question: Which observations are outliers based on all three of our diagnostic tests?
+
+
+>> Question: What do you think we should do with these outliers? What is your rationale for that decision?
+
+
+
+# Missing Data {#miss}
+
+Import data
+```{r}
+data_miss <- import("miss.csv")
+head(data_miss)
+```
+
+
+## Assessing Missing Data
+
+Missing values are indicated in R by an `NA` in the data frame. 
+
+We can visualize the rows with missing data on each variable using the `vis_miss()` function from the `naniar` package. It also provides a measure of the percentage of missing data on each variable.
+```{r}
+data_miss %>%
+  vis_miss()
+```
+
+It looks like extraversion is missing 8% of responses and happiness is missing 5%.
+
+
+
+## Listwise Deletion
+
+Listwise deletion excludes all rows from the analysis that have NAs for any of the variables included in the model. 
+
+Listwise deletion is not recommended unless the percentage of missing data is very small because it 1) reduces power because it uses a smaller sample size to fit the model, and 2) can lead to biased parameter estimates.
+
+
+The `lm` function can be told how to handle missing values using the `na.action` argument. By default, the `na.action` argument is most likely set to `na.omit` unless you have changed that default value. Let's check.
+
+```{r}
+getOption("na.action")
+```
+
+
+`na.omit` means the model will use listwise deletion. If you don't choose another method of handling missing data, then you're going with the default of listwise deletion.
+```{r}
+model_listwise <- lm(happiness ~ extraversion, data = data_miss)
+summary(model_listwise)
+```
+
+
+
+
+## Multiple Imputation
+
+Social scientists have increasingly encouraged the community to use either **multiple imputation** or **full information maximum likelihood (FIML)** to handle missing data as opposed to the traditional approach of listwise deletion. Studies have found that these two methods for handling missing data 1) maintain better power, and 2) produce less biased parameter estimates. 
+
+We're going to cover multiple imputation in this lab. You'll learn how to use FIML, which is another great way of handling missing data, in 613 when you cover multilevel modeling. 
+
+
+Multiple imputation can be performed using the functions from the `mice` package. It occurs in a few steps:
+
+
+### 1. Create several imputed data sets
+
+* Missing values will be predicted based on the associations observed for other participants in the data set plus random noise to reflect the uncertainty in predicting these values. **Set a seed when imputing the data sets if you would like the results to be replicable** using the `seed` argument.
+
+* We also have to choose the number of data sets to impute using the `m` argument. A commonly chosen value is 5, but there are arguments for using larger numbers of imputations as the proportion of missing data increases.
+
+```{r}
+imp <- mice(data_miss, m = 5, seed = 382, print = FALSE)
+```
+
+
+### 2. Fit the model with each of the imputed data sets
+
+```{r}
+model <- with(imp, lm(happiness ~ extraversion, data = data_miss))
+```
+
+
+### 3. Pool the results across all imputed models.
+
+Finally, we can average the results across all of the imputed models to get a final set parameter estimates and a test of their significance.
+
+```{r}
+pooled_model <- pool(model)
+
+# Summary() Output
+summary(pooled_model)
+```
+
+The parameter estimates are simply averaged across each of the estimated models. 
+
+The calculation of the pooled degrees of freedom gets... hairy. See [Grund, Lüdtke, and Robitzsch (2016)  ](https://econtent.hogrefe.com/doi/abs/10.1027/1614-2241/a000111?journalCode=med). and [Li et al. (1991)](https://www.jstor.org/stable/24303994?casa_token=joKpsr8P_AwAAAAA%3ANPGxhQ00Nl2Y6ENMx890P2vHkF_Hj3YEEmQyUeC2jwlPFcy61ort3H0zwPUQDi4RwWUH7KtuP_7a7zzQWrDCL0iWkOpCs_OVC-MWCbH8CNiVKie_54gQ). 
+
+
+
+
+# Violations of Correctly Specified Form {#form}
+
+One of the assumptions underlying linear regression is that the form of the relationship between the predictor(s) and outcome is correctly specified. Most often, we assume the relationship is **linear**. If the actual form of the relationship is **non-linear**, then the linear model estimates could be quite inaccurate. 
+
+If a linear model is used to fit the relationship between the predictor(s) and outcome variable  but the relationship actually follows a non-linear pattern, this will show up as a systematic pattern in the **residuals plot**.
+
+Import data
+```{r}
+data_nonlin <- import("nonlinear.csv")
+head(data_nonlin)
+```
+
+Fit model 
+```{r}
+model_nonlin <- lm(happiness ~ extraversion, data = data_nonlin)
+```
+
+Examine residuals plot
+```{r}
+plot(model_nonlin, 1)
+```
+
+If the linear model is a good fit to the pattern of the relationship, there will be no discernible pattern in the residuals plot. If there is some systematic pattern, this is indication that potentially there is a non-linear trend not being captured by the linear model. Our model certainly seems to show a systematic pattern in its residuals! 
+
+We should have started out with a visual inspection of the relationship between the predictor and outcome variable to see if it fit the assumption of linearity before fitting the model. Let's look at it now:
+
+```{r}
+ggplot(data_nonlin, aes(x = extraversion, y = happiness)) +
+  geom_point()
+```
+
+
+**Potential Solution:** If your residuals plot suggests the relationship is non-linear, then consider fitting a **non-linear model** that more accurately captures the form of the relationship between the predictor(s) and outcome. We don't get to discuss fitting non-linear models much in this course, so I would recommend looking into this more if you are interested. You'll get to discuss it a little more with logistic regression in 613, though. The other option would be to transform the variable(s) so that the relationship between them fits the pattern of a straight line.
+
+
+
+
+# Violations of Normality Assumption {#normal}
+
+Another assumption underlying linear regression is that the model's residuals are normally distributed.
+
+To diagnose this problem, you can either:
+
+  * Examine the distribution of the residuals, and/or 
+  * Examine a Q-Q plot
+
+Import data
+```{r}
+data_nonnorm <- import("nonnormal.csv")
+head(data_nonnorm)
+```
+
+Fit the model
+```{r}
+model_nonnorm <- lm(happiness ~ extraversion, data = data_nonnorm)
+```
+
+Plotting a distribution of the residuals
+```{r}
+# storing residuals
+regr_diags <- augment(model_nonnorm)
+regr_diags
+
+# plotting histogram of residuals
+ggplot(data = regr_diags, aes(x = .resid)) + 
+  geom_density(fill = "purple") + 
+  stat_function(linetype = 2, 
+                fun      = dnorm, 
+                args     = list(mean = mean(regr_diags$.resid), 
+                                sd   =   sd(regr_diags$.resid))) +
+  theme_minimal()
+```
+
+Examining a QQ-Plot
+```{r}
+ggplot(model_nonnorm) +
+  geom_abline(color = "turquoise4") + 
+  stat_qq(aes(sample = .stdresid), color = "darkorchid4", alpha = .50) +
+  theme_minimal()
+```
+
+>> Question: Do you see evidence of non-normality in the residuals based on the distribution and QQ plot?
+
+
+
+
+**Potential Solution:** Linear regression is robust to some degree of violation of the normality assumption. If you see evidence of non-normality, make sure you have dealt with (or are aware of) any potential outliers that could be driving the non-normality in the residuals. If the non-normality is not due to outliers, then you can apply a transformation to Y and/or X to try to produce a model with normally distributed residuals.
+
+
+
+Let's see if we can gain more insight into the cause of the non-normality by looking at a scatterplot of the relationship between `extraversion` and `happiness` in this data set.
+
+```{r}
+ggplot(data_nonnorm, aes(x = extraversion, y = happiness)) +
+  geom_point()
+```
+
+>> Question: Do you notice anything in the scatterplot that could be driving the non-normality in the residuals?
+
+
+
+
+
+# Violations of Homogeneity of Variances Assumption {#homog}
+
+Another assumption underlying linear regression is called *homoscedasticity*, which is the assumption that the variance of an outcome is approximately the same across all values of the predictor(s). *Heteroskedasticity* is the violation of this assumption. The accuracy of the standard errors and confidence intervals depend on this assumption being met.
+
+The residuals plot can also be used to check for heteroskedasticity. 
+
+Import data
+```{r}
+data_heteroskedastic <- import("heteroskedastic.csv")
+head(data_heteroskedastic)
+```
+
+Fit the model
+```{r}
+model_heteroskedastic <- lm(happiness ~ extraversion, data = data_heteroskedastic)
+```
+
+Examine the residuals plot
+```{r}
+plot(model_heteroskedastic, 1)
+```
+
+>> Question: Do you see any evidence of heteroskedasticity?
+
+
+
+**Potential Solution:** Sometimes, dealing with non-normality can also treat heteroskedasticity. If the heteroskedasticity remains, though, then one option for treating it is to fit your model using **weighted least squares**.
+
+
+## Weighted Least Squares
+
+Weighted least squares assigns a weight to each observation to be used when finding the best-fitting model. A common weight that's used when the residuals are **heteroskedastic** is $1/X^2$.
+
+```{r}
+model_weighted <- lm(happiness ~ extraversion, data = data_heteroskedastic, weights = 1/extraversion^2)
+
+summary(model_weighted)
+```
+
+
+
+
+# Violations of Independence Assumption {#indep}
+
+Another assumption underlying linear regression is that the errors are independent of each other. Non-independence can occur if people's scores on the outcome variable are related to each other for some reason (e.g., the same person responds multiple times or you measured responses from clusters of individuals in the same setting).
+
+The design of the study if the most obvious way to know whether to expect non-independence among one's residuals. For instance, if the researcher intentionally collected multiple scores from the same participants, they should not anticipate participants' errors to be independent. 
+
+To test for non-independence when the research design does not inform you, you can look at a plot of the residuals with a variable that the errors should not correspond to (e.g., ID number, time). This is an imperfect way of deducing issues of non-independence, though, and the best way of ensuring independence occurs during data collection.
+
+Let's get some more insight, though, by plotting residuals against ID numbers.
+
+Import data
+```{r}
+data_nonind <- import("nonindependent.csv")
+head(data_nonind)
+```
+
+Fit the model
+```{r}
+model_nonind <- lm(happiness ~ extraversion, data = data_nonind)
+```
+
+Plot the residuals by ID
+```{r}
+# storing residuals
+regr_diags <- augment(model_nonind)
+regr_diags
+
+# Add ID column
+regr_diags$ID <- data_nonind$ID
+
+# Plot residuals by ID
+ggplot(data = regr_diags, aes(x = ID, y = .resid)) + 
+  geom_point() +  
+  geom_smooth(se = F) +
+  geom_hline(yintercept = 0)
+```
+
+It looks like adjacent residuals tend to be similar to each other, which could indicate that participants came and participated in pairs or that the same individual completed the study back-to-back. 
+
+
+**Potential Solution:** Relationships among participants' residuals can be driven by 1) repeated measures from the same (or related) participants, and 2) clustering among participants. The first source of non-independence can be dealt with by using a **repeated-measures or longitudinal analysis**. The second source of non-independence can be dealt with by using **multilevel modeling**. You'll discuss both of these analyses more in 613. 
+
+
+
+# Multicollinearity {#multi}
+
+Multicollinearity occurs when one or more predictors in our model are highly correlated. This causes an issue because 1) it becomes more difficult to measure the unique relationship between each predictor variable and the outcome, and 2) high multicollinearity increases standard errors and confidence intervals, which makes it more difficult to detect the significance of predictors.
+
+For this example, we're using a data set that has two predictors of `happiness`, `extraversion` and `social_engagement`.
+
+Import data
+```{r}
+data_multicoll <- import("multicollinear.csv")
+head(data_multicoll)
+```
+
+First, you can simply look at a correlation matrix of your predictors. 
+```{r}
+data_multicoll %>%
+  cor()
+```
+
+The variables `extraversion` and `social_engagement` appear to be VERY highly correlated (*r* = 0.96)!
+
+We can't rely *only* on correlation matrices to identify collinearity, because it is possible for multicollinearity to exist among three or more variables (even if each pair of variables is not highly correlated). 
+
+Thus, we also want to calculate numerical measures of multicollinearity, including *tolerance* and *VIFs*.
+
+Fit the model
+```{r}
+model_multicoll <- lm(happiness ~ extraversion + social_engagement, data = data_multicoll)
+```
+
+Examining tolerance & VIFs
+```{r}
+ols_vif_tol(model_multicoll)
+```
+
+**Rule of thumb for interpreting multicollinearity**: Either a *low* tolerance (below 0.20 is one rule of thumb) or a *high* VIF (above 5 or 10) is an indication of a problem with multicollinearity.
+
+
+**Potential solution:** One potential solution for handling multicollinearity is to combine predictor variables that appear to be measuring very similar conceptual constructs. The other potential solution is to drop one of the variables from the analysis that is of less theoretical importance. 
+
+
+Let's combine `extraversion` and `social_engagement` into a single variable that we'll call `sociality` and use this new variable to predict happiness. 
+
+Since the predictor variables could have been measured in originally different units, we'll first standardize them (i.e., convert them into z-scores) before combining participants' scores in each variable. There are different ways of combining scores on different variables. Here, we will simply average them.
+```{r}
+data_multicoll <- data_multicoll %>%
+  mutate(ext_std = scale(extraversion, center = TRUE, scale = TRUE),
+         soc_eng_std = scale(social_engagement, center = TRUE, scale = TRUE),
+         sociality = ((ext_std + soc_eng_std)/2))
+
+model_sociality <- lm(happiness ~ sociality, data = data_multicoll)
+```
+
+Look at how the summary() output for the two models differs. 
+
+To compare the two models, let's fit the first model with standardized scores on each predictor so their scales are comparable to that of the predictor in the second model.
+```{r}
+model_multicoll <- lm(happiness ~ ext_std + soc_eng_std, data = data_multicoll)
+summary(model_multicoll)
+
+summary(model_sociality)
+```
+
+>> Question: What do you notice about the difference between the two model outputs?
+

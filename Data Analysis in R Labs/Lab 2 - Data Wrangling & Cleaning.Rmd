@@ -1,0 +1,598 @@
+---
+title: 'Lab 2: Data Wrangling & Cleaning'
+output:
+  html_document:
+    fig_caption: yes
+    theme: cosmo
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+    df_print: paged
+  word_document:
+    toc: yes
+    toc_depth: '3'
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, rows.print = 5)
+
+# suppress scientific notation
+options(scipen = 999)
+
+# load libraries
+library(tidyverse)
+library(janitor)
+library(rio)
+```
+
+
+# Purpose
+
+The purpose of today's lab is to introduce you to the `tidyverse` as a framework for working with data structures in R.  We will mostly focus on data wrangling (particularly data transformation), including how to extract specific observations and variables, how to generate new variables and how to summarize data. 
+
+For further resources on these topics, check out [*R for Data Science*](https://r4ds.had.co.nz/){target="_blank"} by Hadley Wickham and [this cheatsheet on data wrangling](https://github.com/rstudio/cheatsheets/blob/master/data-transformation.pdf){target="_blank"} from RStudio.
+
+
+To quickly navigate to the desired section, click one of the following links:
+
+1. [Intro to the tidyverse](#tidy)
+1. [Manipulating observations](#obs)
+1. [Manipulating variables](#vars)
+1. [Summarizing data](#summarize)
+1. [Grouping Data](#group)
+1. [Data Cleaning](#clean)
+
+
+***
+
+# Intro to the tidyverse{#tidy}
+
+* The `tidyverse`, according to its creators, is ["an opionated collection of R packages designed for data science."](https://www.tidyverse.org/){target="_blank"} It's a suite of packages designed with a consistent philosophy and aesthetic. This is nice because all of the packages are designed to work well together, providing a consistent framework to do many of the most common tasks in R, including, but not limited to...
+
+  + data manipulation (`dplyr`) **= our focus today**
+  + reshaping data (`tidyr`)
+  + data visualization (`ggplot2`)
+  + working with strings (`stringr`)
+  + working with factors (`forcats`)
+
+To load all the packages included in the `tidyverse`, use:
+
+```{r eval=FALSE}
+#install.packages("tidyverse")
+library(tidyverse)
+```
+
+* Three qualities of the `tidyverse` are worth mentioning at the outset:
+
+  1. Packages are designed to be like *grammars* for their task, so we'll be using functions that are named as *verbs* to discuss the tidyverse. The idea is that you can string these grammatical elements together to form more complex statements, just like with language. 
+
+  2. The first argument of (basically) every function we'll review today is `data` (in the form of a data frame). This is very handy, especially when it comes to piping (discussed [below](#pipes)).
+
+  3. Variable names are *usually* not quoted.
+
+## What is data wrangling?
+
+* Data wrangling, broadly speaking, means getting your data into a useful form for visualizing and modelling it. Hadley Wickham, who has developed a lot of the tidyverse, conceptualizes the main steps involved in data wrangling as follows:
+
+  1. Importing your data (covered in Lab 1)
+  
+  2. Tidying your data (brief summary below)
+  
+  3. Transforming your data (what we'll cover today)
+
+
+## What is tidy data?
+
+* Data is considered "tidy" when:
+
+  1. Each variable has its own column
+  
+  2. Each observation has its own row
+  
+  3. Each value has its own cell
+
+
+* If your data is not already in tidy format when you import it, you can use functions from the `{tidyR}` package, e.g. `pivot_longer()` and `pivot_wider()`, that allow you to "reshape" your data to get it into tidy format. 
+
+* However, this term we are mostly going to work with simpler datasets that are already tidy, so we are not going to focus on these functions today. These functions will become especially useful in the future when we work with repeated measures data that has multiple observations for each subject. If you are interested in learning more about reshaping your data with `{tidyR}`, check out [this chapter](https://r4ds.had.co.nz/tidy-data.html#introduction-6){target="_blank"} from *R for Data Science*.
+
+## Today's focus: `{dplyr}`
+
+* Most of the functions we'll go over today come from the `{dplyr}` package. Essentially, you can think of this package as a set of "pliers" that you can use to tweak data frames, hence its name.
+
+
+* `{dplyr}` is a "grammar" of data manipulation. As such, its functions are *verbs*:
+
+  + `mutate()` adds new variables that are functions of existing variables
+  
+  + `select()` picks variables based on their names.
+  
+  + `filter()` picks cases based on their values.
+  
+  + `summarize()` reduces multiple values down to a single summary.
+  
+  + `arrange()` changes the ordering of the rows.
+  
+
+* Note that `{dplyr}` functions always take a data frame as the first argument and return a modified data frame back to you. The fact that you always get a data frame back is useful down the road when you are modelling and visualizing data. 
+
+## Pipes{#pipes}
+
+* Pipes come from the `{magrittr}` package are available when you load the tidyverse. (Technically, the pipe is imported with `{dplyr}`.) Pipes are a way to write strings of functions more easily, creating *pipelines*. They are extremely powerful and useful. 
+
+  + You can enter a pipe with the shortcut `CTRL+Shift+M` for PC or `CMD+Shift+M` for Mac.
+  
+```{r eval=FALSE, echo=TRUE}
+#practice entering a pipe with the shortcut here
+```
+  
+
+* A pipe passes an object on the left-hand side as the first argument (or `.` argument) of whatever function is on the right-hand side.
+
+  + `x %>% f(y)` is the same as `f(x, y)`
+
+  + `y %>% f(x, ., z)` is the same as `f(x, y, z )`
+
+Example: I want to calculate the mean of the mpg variable from the mtcars data set and round our answer to 2 decimal places. I can accomplish this by nesting:
+
+```{r eval=FALSE, echo=TRUE}
+round(mean(mtcars$mpg, na.rm = TRUE), 2)
+```
+
+Or, we could use pipes. Grammatically, you can think of a pipe as “then.” I have a variable, the mile per gallon of cars, THEN I want to take the mean of that variable, and THEN I want to round that answer to two decimal places.
+
+```{r eval=FALSE, echo=TRUE}
+mtcars$mpg %>% # select the `mpg` variable from the `mtcars` dataset
+  mean(na.rm = TRUE) %>% # calculate the mean
+  round(2) # round to 2 decimal places
+```
+
+Now, rewrite the following code using pipes.
+
+```{r eval=FALSE, echo=TRUE}
+round(sqrt(sum(mtcars$cyl)), 1)
+```
+
+```{r instructor, eval=FALSE, echo=TRUE}
+# your code here
+```
+
+
+### Why use pipes?
+
+1. Cleaner code
+    * This is nice, because it helps make your code more readable by other humans (including your future self). 
+    
+\n
+2. Cleaner environment
+    * When you use pipes, you have basically no reason to save objects from intermediary steps in your data wrangling / analysis workflow, because you can just pass output from function to function without saving it.
+    * Finding objects you're looking for is easier.
+
+\n    
+3. Efficiency in writing code
+    * Naming objects is hard; piping means coming up with fewer names.
+
+\n
+4. More error-proof
+    * Because naming is hard, you might accidentally re-use a name and make an error.
+
+## Example dataset
+
+* Let's keep using the World Happiness dataset that we discussed last week. You can import the data with the following code:
+
+```{r}
+world_happiness <- rio::import("https://happiness-report.s3.amazonaws.com/2023/DataForTable2.1WHR2023.xls")
+```
+
+### Clean names
+
+* If we look at the names of the variables in `world_happiness`, we'll notice that all of the variable names are capitalized. 
+
+```{r}
+names(world_happiness)
+```
+
+* Personally, I find it annoying to have to remember to capitalize the first letter whenever I reference a variable name. The `clean_names()` function from the `{janitor}` package will (by default) convert all variable names to `snake_case` (but there are several other options...see [here](https://cran.r-project.org/web/packages/janitor/vignettes/janitor.html#clean-data.frame-names-with-clean_names){target="_blank"} for more info).
+
+```{r eval=FALSE}
+#install.packages("janitor") # if not already installed
+library(janitor)
+```
+
+```{r}
+# clean variable names and re-save the data
+world_happiness <- world_happiness %>% 
+  clean_names()
+```
+
+Now all of our variable names are lower case and spaces have been replaced with an underscore. 
+
+```{r}
+names(world_happiness)
+```
+
+* **Note**: Remember to save your new data frame to an object of the same name as your old data frame if you want to overwrite the old one (and save the new data frame to an object with a **different name** if you *don't* want to overwrite the old one). 
+
+***
+
+# Manipulating observations{#obs}
+
+## Extract rows with `filter()`
+
+* The `filter()` function is used to subset observations based on their values. The result of filtering is a data frame with the same number of columns as before but fewer rows.
+
+* The first argument is `data` and subsequent arguments are logical expressions that tell you which observations to retain in the data frame. 
+
+For example, we can filter rows to retain data only for the United States.
+
+```{r eval=FALSE, echo=TRUE}
+world_happiness %>% 
+  filter(country_name == "United States")
+```
+
+## Logical operators
+
+* The `==` we just used is an example of a comparison operator that tests for equality. The other comparison operators available are :
+
+  + `>` (greater than)
+  + `>=` (greater than or equal to)
+  + `<` (less than)
+  + `<=` (less than or equal to)
+  + `!=` (not equal to)
+
+\n
+* You can combine multiple arguments to `filter()` with Boolean operators. 
+
+* For example, let's select observations for the United States, Mexico and Canada.
+
+```{r eval=FALSE, echo=TRUE}
+world_happiness %>% 
+  filter(country_name == "United States" | country_name == "Mexico" | country_name == "Canada")
+```
+
+* Since it is somewhat cumbersome to write `country_name` three times, we can use a special short-hand here with the `%in%` operator. Generally speaking, specifying `x %in% y` will select every row where `x` is one of the values in `y`.
+
+So we could have written our filter statement like this:
+
+```{r eval = FALSE, echo=TRUE}
+world_happiness %>% 
+  filter(country_name %in% c("United States", "Mexico", "Canada"))
+
+country_names = c("United States", "Mexico", "Canada")
+
+world_happiness %>% 
+  filter(country_name %in% country_names)
+```
+
+
+### You try
+
+* The variable `life_ladder` was used to measure people's happiness or subjective well-being. Participants were told to, "Please imagine a ladder, with steps numebred from 0 at the bottom to 10 at the top. The top of the ladder represents the best possible life for you and the bottom of the ladder represents the worst possible life for you. On which step of the ladder would you say you personally feel you stand at this time?"
+
+Filter for observations that are greater than the mean of `life_ladder`
+```{r}
+# your code here
+```
+
+
+* Filter for observations that are greater than the mean of `life_ladder` but less than the mean of `log_gdp_per_capita`
+```{r}
+# your code here
+
+
+```
+
+
+
+## Sort rows with `arrange()`
+
+* The `arrange()` function keeps the same number of rows but changes the *order* of the rows in your data frame.
+
+* The first argument is `data` and subsequent arguments are name(s) of columns to order the rows by. If you provide more than one column name, each additional column will be used to break ties in the values of preceding columns.
+
+For example, let's re-order observations by `life_ladder`. Note that rows are sorted in ascending order by default.
+
+```{r eval = FALSE, echo=TRUE}
+world_happiness %>% 
+  arrange(life_ladder) %>%  # sorts in ascending order by default
+  head()
+
+world_happiness %>% 
+  arrange(desc(life_ladder)) %>% 
+  head()# sort in descending order
+```
+
+***
+
+# Manipulating variables{#vars}
+
+## Extract columns with `select()`
+
+* The `select()` function subsets columns in your data frame. This is particularly useful when you have a data set with a huge number of variables and you want to narrow down to the variables that are relevant for your analysis. 
+
+* The first argument is `data`, followed by the name(s) of the column(s) you want to subset. Note that you can use variable positions rather than their names, but this is usually not as useful. Let's go through some simple examples of common uses of `select()`.
+
+* Select one variable
+
+```{r eval = FALSE, echo=TRUE}
+world_happiness %>% 
+  select(country_name)
+```
+
+* Select multiple variables
+
+```{r eval = FALSE, echo=TRUE}
+world_happiness %>% 
+  select(country_name, freedom_to_make_life_choices, perceptions_of_corruption)
+```
+
+* Select a range of variables
+
+```{r eval = FALSE, echo=TRUE}
+world_happiness %>% 
+  select(country_name:social_support)
+```
+
+* Rearrange the order of variables
+  + Note: `everything()` is a helper function that gives us all the remaining variables in the data frame (see more on [helper functions](#helper) below)
+
+```{r eval = FALSE, echo=TRUE}
+world_happiness %>% 
+  select(country_name, generosity, everything()) %>% 
+  names() # notice that country_name and generosity now appear before the other columns
+```
+
+* De-select variables with a minus sign (`-`)
+
+```{r eval = FALSE, echo=TRUE}
+world_happiness %>% 
+  select(-life_ladder) %>% 
+  names()
+```
+
+* De-select range of variables
+
+```{r eval = FALSE, echo=TRUE}
+world_happiness %>% 
+  select(-(log_gdp_per_capita:perceptions_of_corruption)) %>% 
+  names()
+```
+
+### You try
+
+* Produce a data frame of the variables `country_name`, `log_gdp_per_capita`, and `life_ladder` for countries whose `log_gdp_per_capita` is less than average.
+
+```{r}
+# your code here
+```
+
+
+
+* Produce a data frame that selects the columns `country_name`, `year`, and `freedom_to_make_life_choices`. Filter the results so only entries from the year 2019 are included. Arrange the rows by `freedom_to_make_life_choices` in descending order. Which country scored the higher on `freedom_to_make_life_choices` in 2019? Out of how many countries with scores reported in 2019?
+
+```{r}
+# your code here
+```
+
+
+
+### Helper functions for `select()` {#helper}
+
+There are some "helper" functions that you can use along with `select()` that can sometimes be more efficient than selecting your variables explicitly by name. 
+
+function | what it does
+---------|-------------
+`starts_with()` | selects columns starting with a string
+`ends_with()` | selects columns that end with a string
+`contains()` | selects columns that contain a string
+`matches()` | selects columns that match a regular expression
+`num_ranges()` | selects columns that match a numerical range
+`one_of()` | selects columns whose names match entries in a character vector
+`everything()` | selects all columns
+`last_col()` | selects last column; can include an offset.
+
+Quick example:
+
+```{r}
+world_happiness %>% 
+  select(starts_with("c"))
+```
+
+## Make new variables with `mutate()`
+
+* The `mutate()` function is most commonly used to add new columns to your data frame that are functions of existing columns.
+
+* `mutate()` requires data as its first argument, followed by a set of expressions defining new columns. Let's take a couple examples...
+
+* Create new variables
+  + **Note**: New variables are automatically added at the end of the data frame (scroll to the right to see them)
+
+```{r eval = FALSE, echo=TRUE}
+world_happiness %>% 
+  mutate(corruption_z = scale(perceptions_of_corruption), # z-score `corruption` variable
+         positive_affect = round(positive_affect, 0)) %>%  # round `positive_affect` variable to a whole number
+  head()
+```
+
+* Change existing variables
+
+When we imported our data, the `world` variable was automatically categorized as a `character`.
+
+```{r eval = FALSE, echo=TRUE}
+class(world_happiness$country_name)
+```
+
+However, this variable refers to discrete categories, and we want to change it to be a `factor`. We can do this using `mutate()`.
+
+```{r eval = FALSE, echo=TRUE}
+# Note that I am re-saving the dataframe here to preserve this change
+world_happiness <- world_happiness %>% 
+  mutate(country_name = as.factor(country_name))
+```
+
+Now check the type again...
+
+```{r eval = FALSE, echo=TRUE}
+class(world_happiness$country_name)
+```
+
+***
+
+# Summarizing data{#summarize}
+
+* The next dplyr verb we’ll cover is `summarize()`, which is used to summarize across rows of a dataset. Like all tidyverse functions, `summarize()` requires `data` as its first argument, and then you enter your summary functions separated by commas. Summary functions take vectors as inputs and return single values as outputs.
+
+* The resulting dataset will have just the summary variables you created and will lose everything else. In other words, you are going from your raw data frame to a smaller summary data frame that only contains the summary variables you specify within `summarize()`.
+
+Let's use `summarize()` to get the mean of `positive_affect` across all observations in the dataset. 
+
+```{r eval = FALSE, echo=TRUE}
+world_happiness %>% 
+  summarize(mean_positive_affect = mean(positive_affect, na.rm = TRUE)) 
+```
+
+* Of course, we typically want to calculate more than just a mean. We can add other summary variables, separating them by commas. 
+
+```{r eval = FALSE, echo=TRUE}
+world_happiness %>% 
+  summarize(mean_positive_affect = mean(positive_affect, na.rm = TRUE), # mean
+            sd_positive_affect = sd(positive_affect, na.rm = TRUE), # standard deviation
+            n = n()) # number of observations
+```
+
+* For a list of other common summary functions, check out the [cheat sheet](https://github.com/rstudio/cheatsheets/blob/master/data-transformation.pdf){target="_blank"}. 
+
+*** 
+
+# Grouping data{#group}
+
+* The `group_by()` function creates groups based on one or more variables in the data. This affects all kinds of things that you then do with the data, such as mutating and/or summarizing. `group_by()` requires `data` as its first argument, and the you name the variable(s) to group by.
+
+
+```{r }
+world_happiness %>% 
+  group_by(country_name)
+```
+
+At first glance, it doesn't appear that anything has happened. However, under the hood it has indeed grouped the data frame by the `country_name` variable. 
+
+## Combining `group_by()` and `summarize()`
+
+* `group_by()` and `summarize()` can be combined to get group-level statistics. This is a great way to make tables of descriptive stats in R or to create aggregated datasets for some purposes.
+
+* To use these together, you just run `group_by()` followed by `summarize()` in a pipeline.
+
+```{r eval = FALSE, echo=TRUE}
+world_happiness %>% 
+  group_by(country_name) %>% # group by the world variable
+  summarize(mean_positive_affect = mean(positive_affect, na.rm = TRUE), # mean
+            sd_positive_affect = sd(positive_affect, na.rm = TRUE), # standard deviation
+            n = n()) # number of observations
+```
+
+
+
+# Data Cleaning{#clean}
+
+We can also use `dplyr` functions to assist with the job of data cleaning. You've already seen some data cleaning functions, like cleaning variable names, transforming measure types (e.g., `as.factor()`), and performing descriptive statistics (e.g., `psych::describe()`).
+
+Let's talk about a couple of other functions that can be used for data cleaning.
+
+
+## Identifying Duplicate Rows
+
+The `duplicated()` function can be used to identify rows with duplicate values on any variable. Let's apply this function to the `country_name` variable.
+```{r}
+duplicated(world_happiness$life_ladder)
+```
+
+The function returns `FALSE` and `TRUE` values corresponding to whether a particular row has a value on `country_name` that has already occurred in the data set. This can be used along with the `filter` function to isolate rows with duplicate values.
+
+```{r}
+world_happiness %>%
+  filter(duplicated(world_happiness$country_name) == TRUE)
+```
+
+We can see that there are duplicate entries for many of the countries in our sample. This is likely intentional, but this function can be used in the future to identify rows with repeating values on variables that are *not* intended (i.e., IP addresses, ID numbers, etc.).
+
+
+## Replacing Values
+
+There are many ways in R to replace a particular value in a data set with another value. One option for accomplishing this using `dplyr` functions is by combining the `mutate()` function with the `replace()` function.
+
+Let's say we made a data entry error for the `healthy_life_expectancy_at_birth` value for `Switzerland` in the year `2019`. The value is currently 72.5, but it should be updated to 73.5.
+```{r}
+world_happiness %>%
+  filter(country_name == "Switzerland" & year == 2019) %>%
+  select(healthy_life_expectancy_at_birth) # The original value
+```
+
+To use the `replace()` function, include the following arguments:
+
+* The name of the variable needing a value replaced on it
+* The original value
+* The value to replace the original value with
+
+We can combine the `replace()` and `mutate()` functions to clean up this value.
+```{r}
+world_happiness <- world_happiness %>%
+  mutate(healthy_life_expectancy_at_birth = replace(healthy_life_expectancy_at_birth, healthy_life_expectancy_at_birth == 72.5, 73.5))
+```
+
+Re-run the previous code chunk to see that the value has been updated.
+
+
+***
+
+# Minihacks
+
+Now that you've learned how to manipulate and transform data, let's apply those skills to the mission of data cleaning. 
+
+Download the `student_experience.csv` dataset from Canvas and import the file. Assign it to an object called `student_df`.
+```{r}
+
+```
+
+
+Here is a description of each variable:
+
+* Row number = a number corresponding to each row of data; sometimes when we are manipulating data, the rows get moved around, and it is helpful to have a row number variable to keep track of which row values were originally located in
+
+* ID = an arbitrary unique identification number for each participant
+
+* final grade = final grade in a statistics course
+
+* rated stress = how stressed a research assistant rated the participant as seeming when they came into the lab to participate in the study (0 = not at all stressed, 1 = a little, 2 = somewhat, 3 = very stressed) 
+
+* Hours Spent Working Part-time = the number of hours participants said they spent working a part-time job during the school year
+
+* Age = the self-reported age of participants (in years)
+
+
+1. Clean the variable names by transforming the name of each column into `snake_case` format.
+```{r}
+
+```
+
+
+2. Check the variables' measure types. Fix any of the measure types that were imported incorrectly.
+```{r}
+
+```
+
+
+3. Identify any rows with duplicate ID numbers (this means a participant was in the study more than once!). Then, remove one of the instances of duplication from the data set.
+```{r}
+
+```
+
+
+4. Identify any data entry errors. If it's possible to infer with great certainty what the correct value should be, then fix the data entry error. If not possible, then remove the data entry error.
+```{r}
+
+```
+
+**Hint:** A helpful way of identifying data entry errors is by looking at descriptive statistics for each variable and noticing if anything looks suspicious.

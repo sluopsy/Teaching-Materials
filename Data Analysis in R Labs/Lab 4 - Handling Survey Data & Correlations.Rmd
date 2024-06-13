@@ -1,0 +1,302 @@
+---
+title: "Handling Survey Data"
+output:
+  html_document:
+    theme: cosmo
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+  word_document:
+    toc: yes
+    toc_depth: '3'
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include = FALSE}
+library(rio) # importing data
+library(psych) # descriptive statistics and alpha
+library(tidyverse) # data wrangling
+library(ggplot2) # data visualizations
+library(here)
+
+# install.packages("corrplot")
+library(corrplot) # for heatmap
+
+# install.packages("apaTables)
+library(apaTables) # for APA tables
+```
+
+# Research Scenario
+
+A researcher measures personality in their study using the Big Five Inventory-2 (BFI-2), which includes five subscales capturing each of the following personality traits: 1) Extraversion, 2) Agreeableness, 3) Conscientiousness, 4) Neuroticism (or negative emotionality), and 5) Openness (or open-mindedness).
+
+We need to prepare the data collected using this survey for analysis. You can see each of the items as well as which items belong to which of the subscales listed above on the **bfi2-form.pdf** document. 
+
+# Import Data
+
+First, let's import the data.
+```{r}
+data <- import("bfi2.csv")
+head(data)
+```
+
+# Handling Survey Data
+
+## Reverse-coding
+
+Before aggregating items that belong to each personality trait subscale, we need to reverse-code items as needed. 
+
+In the scoring key section of the **bfi2-form.pdf** document, items with an *R* next to them should be reverse-coded.
+
+Remember that when reverse-coding items, it's wise to store the results in a new object rather than overwrite the original, raw data. This way, if any errors occur in the reverse-coding process, they can be more easily identified and fixed.
+
+We'll use the same method for reverse coding that we discussed in class: 
+
+$$(Max - X) + Min$$
+
+  + Max is the highest possible score 
+  + X is the participant's actual score
+  + Min is the lowest possible score
+  
+For this example, responses on the BFI-2 were given on a scale from 1 (strongly disagree) to 5 (strongly agree). The maximum, then, is 5, and the minimum is 1. 
+  
+Additionally, in the code below:
+
+* The mutate() function allows us to create new variables that are functions of existing variables in the data set
+
+* The across() function allows us to perform a computation across multiple columns in the data set 
+
+* The period is an indicator to input each participant's raw score on each of the items listed
+
+```{r}
+data2 <- data %>%
+  mutate(across(c(big_2_11,
+                  big_2_16,
+                  big_2_26,
+                  big_2_31,
+                  big_2_36,
+                  big_2_51,
+                  big_2_12,
+                  big_2_17,
+                  big_2_22,
+                  big_2_37,
+                  big_2_42,
+                  big_2_47,
+                  big_2_3,
+                  big_2_8,
+                  big_2_23,
+                  big_2_28,
+                  big_2_48,
+                  big_2_58,
+                  big_2_4,
+                  big_2_9,
+                  big_2_24,
+                  big_2_29,
+                  big_2_44,
+                  big_2_49,
+                  big_2_5,
+                  big_2_25,
+                  big_2_30,
+                  big_2_45,
+                  big_2_50,
+                  big_2_55,
+                  big_2_63), ~5 - . + 1))
+```
+
+
+## Internal Consistency
+
+Next, let's calculate Cronbach's alpha to measure the internal consistency of each subscale on this personality measure. Cronbach's alpha should be calculated *separately* for each subscale since they are each measuring a different construct. 
+
+First, let's calculate Cronbach's alpha for the items from the BFI-2 that are meant to be assessing extraversion. 
+```{r}
+alpha_extraversion <- data2 %>%
+  select(big_2_1, big_2_6, big_2_11, big_2_16, big_2_21, big_2_26, big_2_31, big_2_36, big_2_41, big_2_46, big_2_51, big_2_56) %>%
+  psych::alpha()
+
+alpha_extraversion
+```
+
+>> Q: Do the items on the extraversion subscale have good internal consistency?
+
+Yes, a Cronbach's alpha between .8 and .9 indicates good internal consistency.
+
+Go ahead and calculate Cronbach's alpha for the other four subscales (agreeableness, conscientiousness, neuroticism, and openness) by referring to the **bfi2-form.pdf** document to see which items belong to which subscale.
+```{r}
+
+
+```
+
+>> Q: How would you judge the internal consistency of the items on each of the other four personality trait subscales?
+
+
+
+
+## Aggregating Scores
+
+Now that appropriate items have been reverse-coded, we can create a single, aggregate score for each of the subscales that represent how participants scored on each personality trait overall. 
+
+A common method of creating a single composite score for a variable measured using multiple items is by calculating the average score across all of the corresponding items. Make sure you use the correct data set containing the reverse-coded items (not the raw data set)!
+
+First, let's create an aggregate score for the extraversion subscale. We can do this by selecting the columns from the dataframe corresponding to our extraversion items and then pass these items to the `rowMeans()` function.
+
+**Note about how missing data is handled:**
+
+* By default, the rowMeans() function does not calculate the mean for rows with missing data on any of the items 
+* To override this, you can add the `na.rm = TRUE` argument, in which case the row mean will be calculated for everyone by simply excluding any missing entries from the calculation
+
+This might be a reasonable approach to handling missingness if the amount of missing data per participant is minimal. Otherwise, we will talk about more methods for handling missing data later on in the course.
+```{r}
+data2$extraversion <- data2 %>%
+  select(big_2_1, big_2_6, big_2_11, big_2_16, big_2_21, big_2_26, big_2_31, big_2_36, big_2_41, big_2_46, big_2_51, big_2_56) %>%
+  rowMeans(na.rm = TRUE)
+```
+
+Let's take a look at the data frame to make sure the new aggregated variable was added at the end of it as expected.
+```{r}
+View(data2)
+```
+
+
+Go ahead and construct an aggregate score for the other four subscales (agreeableness, conscientiousness, neuroticism, and openness) by referring to the **bfi2-form.pdf** document to see which items belong to which subscale.
+```{r}
+
+
+```
+
+For reasons we will discuss more later in the course, it's important to understand the relationships between continuous variables that you intend to use as predictors in your regression models. Next, let's move onto examining the correlations among the five personality traits that we just constructed aggregated variables for.
+
+
+# Correlations
+
+## Covariance
+
+Covariance captures how the variances of two variables are related, i.e., how they *co*-vary. If higher values of one variable tend to correspond with higher values of the other variable, and lower values of one variable tend to correspond with lower values of the other variable, then the covariance would be positive. However, if the two variables are inversely related (i.e., higher values on one variable correspond with lower values on the other variable), then the covariance would be negative.  
+
+$$\large cov_{xy} = {\frac{\sum{(x-\bar{x})(y-\bar{y})}}{N-1}}$$
+
+To calculate covariance, use the function `cov()` from the `{stats}` package. The `cov()` function takes two arguments: the first variable "x" and the second variable "y". 
+
+* Let's calculate the covariance between extraversion and agreeableness.
+
+```{r}
+cov(data2$extraversion, data2$agreeableness)
+```
+
+## Covariance Matrix
+
+* Feeding `cov()` a data frame, or multiple columns from a data frame, will generate a covariance matrix. Let's calculate a covariance matrix that shows the covariance for *all pairs* of personality traits. Round to two decimal places. 
+
+```{r}
+data2 %>%
+  select(extraversion, agreeableness, conscientiousness, neuroticism, openness) %>%
+  cov() %>%
+  round(2)
+```
+
+
+## Correlation      
+
+* Correlations are *standardized* covariances. Because correlations are in standardized units, we can compare them across scales of measurements and across studies. Recall that mathematically, a correlation is the covariance divided by the product of the standard deviations of each variable. 
+
+$$\large r_{xy} = {\frac{cov(X,Y)}{\hat\sigma_{x}\hat\sigma_{y}}}$$
+
+* Let's calculate the correlation coefficient for the relationship between extraversion and agreeableness using the `cor()` function from the `{stats}` package.
+
+```{r}
+cor(data2$extraversion, data2$agreeableness)
+```
+
+## Correlation Matrix
+
+* As with covariances, we can generate a matrix of correlations by feeding a data frame, or multiple columns from a data frame, to `cor()`. Let's calculate a covariance matrix that shows the covariance for *all pairs* of personality traits. Round to two decimal places.
+
+```{r}
+cor_matrix <- data2 %>%
+  select(extraversion, agreeableness, conscientiousness, neuroticism, openness) %>%
+  cor() %>%
+  round(2)
+
+cor_matrix
+```
+
+> Q: What do you notice about the relationships between different pairs of personality traits based on this correlation matrix?
+
+
+
+
+
+# Visualizing Correlations
+
+## Scatterplots
+
+You all are already familiar with scatterplots which can be used to visualize the relationship between two continuous variables. For example, let's use `ggplot` to visualize the relationship between extraversion and agreeableness. You can add a line of best fit by adding a `geom_smooth()` layer to the plot. 
+```{r}
+ggplot(data = data2, aes(x = extraversion, y = agreeableness)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+```
+
+## SPLOM plots
+
+There are also ways of visualizing the correlations among *all* of the continuous variables in your dataframe that are of interest in your study. "SPLOM" stands for scatter plot matrix. The `pairs.panel()` function from the `{psych}` package allows a quick way to visualize relationships among all the continuous variables in your data frame. The lower diagonal contains scatter plots showing bivariate relationships between pairs of variables, and the upper diagonal contains the corresponding correlation coefficients. Histograms for each variable are shown along the diagonal. 
+
+```{r}
+data2 %>%
+  select(extraversion, agreeableness, conscientiousness, neuroticism, openness) %>%
+  pairs.panels(lm = TRUE)
+```
+
+## Heat maps
+
+Heat maps are a great way to get a high-level visualization of a correlation matrix. They are particularly useful for visualizing the number of "clusters" in your data if that's something you're looking for. We can plot a heatmap of a correlation matrix using the `corrplot()` function from the `{corrplot}` package. Note: make sure that you are feeding the function a correlation matrix (not the data set). We'll use the correlation matrix that we constructed earlier.
+
+```{r}
+corrplot(corr = cor_matrix, method = "square")
+```
+
+
+## APA Tables
+
+* The package `{apaTables}` has a very useful function `apa.cor.table()` that creates nicely formatted tables of correlation matrices in APA format. This code prints the table to a word document called "cor_matrix.doc" that shows up as a separate document in the file folder that is set as your current working directory.
+
+```{r, eval = FALSE}
+apa.cor.table(cor_matrix, 
+              filename = "cor_matrix.doc", 
+              table.number = 1)
+```
+
+
+# Testing Significance of a Correlation
+
+The `corr.test()` function from the `{psych}` package can be used to test whether the correlation between two variables is significantly different from zero.
+
+Let's test whether the correlation between extraversion and agreeabless (*r* = 0.19) is significantly different from zero.
+```{r}
+data2 %>%
+  select(extraversion, agreeableness) %>%
+  corr.test()
+```
+
+The p-values are not printed to multiple decimals, so it is difficult to extrapolate whether the correlation is significant or not. To work around this, let's store the output of corr.test() to an object and then look at the p-value stored within this object. Additionally, we can pull out the confidence interval.
+
+```{r}
+r_ext_agr <- data2 %>%
+  select(extraversion, agreeableness) %>%
+  corr.test()
+
+r_ext_agr$p
+r_ext_agr$ci
+```
+
+> Q: Is the correlation between extraversion and agreeableness significant?
+
+

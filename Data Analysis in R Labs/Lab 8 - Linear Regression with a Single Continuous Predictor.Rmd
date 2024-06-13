@@ -1,0 +1,359 @@
+---
+title: "Lab 2 - Linear Regression with a Single Continuous Predictor"
+output:
+  html_document:
+    theme: cosmo
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+  word_document:
+    toc: yes
+    toc_depth: '3'
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include = FALSE}
+library(rio) # importing data
+library(psych) # descriptive statistics and alpha
+library(tidyverse) # data wrangling
+library(ggplot2) # data visualizations
+library(pwrss) # for power analysis
+library(epiDisplay) # for frequency tables
+library(broom) # for extracting model's residuals
+library(lsr) # for etaSquared() 
+```
+
+# Research Scenario
+
+**Example:** Researchers have theorized that conscientiousness, a personality trait assessing how organized, planful, and mindful of social rules an individual is, may predict important health outcomes. Specifically, theorists propose that people higher on conscientiousness may engage in less risky health-related, and more beneficial health-related, behaviors than people lower on conscientuousness.  
+
+For the current example, we're going to examine whether self-reported conscientiousness scores (higher scores indicate higher conscientiousness) predict people's self-reported health scores (higher scores indicate people feel that they are in better overall physical health). The data set we're using today includes the following variables:
+
+* pid = Participant ID number
+* gender = Participant's self-reported gender
+* consc = Participant's average conscientiousness 
+* sr_health = Participant's self-reported health 
+
+Let's examine whether these empirical observations support, or refute, psychologists' theories about the relationship between conscientiousness and health outcomes. 
+
+# Import Data
+
+```{r}
+data <- import("https://raw.githubusercontent.com/uopsych/psy612/master/labs/lab-1/data/consc_health.csv")
+```
+
+# Model Comparison
+
+Model A (the model corresponding to the alternative hypothesis) includes conscientiousness as a predictor of health outcomes:
+
+$$ModelA: Health_i = \beta_0 + \beta_1*Conscientiousness + \epsilon_i$$
+
+Model C (the model corresponding to the null hypothesis) excludes conscientiousness as a predictor of health outcomes:
+
+$$Model C: Health_i = \beta_0 + \epsilon_i$$
+
+
+# The Null Hypothesis
+
+The null hypothesis being tested is whether $\beta_1$, the slope corresponding to the relationship between conscientiousness and health, is equal to zero:
+
+$$H_0: \beta_1\ = 0$$
+
+# A priori power analysis
+
+Let's conduct an a priori power analysis to examine the sample size we would need to have an 80% chance of detecting a significant relationship between conscientiousness and health outcomes, if there is one, if we assume that the size of the effect is medium. Remember the conventions for effect sizes:
+
+Cohen's (1988) Conventions for $R^2$ Effect Sizes:
+
+* $R^2$ = .02 is a small effect size
+* $R^2$ = .13 is a medium effect size
+* $R^2$ = .26 is a large effect size
+
+We can perform this power analysis using the `pwrss.f.reg` function from the `pwrss` package. Recall the arguments that this function takes:
+
+* r2 = the estimated r-squared effect size
+* m = the number of predictors being tested in Model A
+* k = the total number of predictors in Model A
+* alpha = 0.05 (typically, in psychology we use an alpha of .05)
+* n = sample size 
+  + Set to `NULL` when you want to solve for the sample size needed to achieve a desired level of power (called an *a priori power analysis*).
+* power = The desired power level
+  + Set to `NULL` when you want to solve for the power you achieved with a given sample size (called a *post-hoc power analysis*).
+  
+Go ahead and use the `pwrss.f.reg` function below to determine the sample size that would be needed to have an 80% chance of detecting a significant relationship between conscientiousness and health outcomes using (assuming we are 5% willing to make a Type I error):
+```{r}
+
+
+```
+
+>> Question: Was the current study adequately powered for detecting a medium sized effect?
+
+
+# Data Cleaning & Wrangling
+
+First, let's check the measure type that each variable was imported as.
+```{r}
+str(data)
+```
+
+We would like *pid* and *gender* to be treated as factors and *consc* and *sr_health* to be treated as numeric variables. Convert variables as needed below:
+```{r}
+
+
+```
+
+
+Examine the data descriptively for any evidence of data entry errors that need to be cleaned up before we move on with the analysis:
+
+```{r}
+
+
+```
+
+
+
+
+# Descriptive Statistics
+
+Let's get, at a minimum, the mean and standard deviation for the two key variables in our study: self-reported conscientiousness and health.
+
+```{r}
+descriptives_table <- data %>%
+  summarise(M_Consc = mean(consc),
+            SD_Consc = sd(consc),
+            M_Health = mean(sr_health),
+            SD_Health = sd(sr_health))
+
+# raw table with no formatting
+descriptives_table
+
+# adding table formatting
+descriptives_table %>%
+  knitr::kable(digits = 2, col.names = c("Mean Conscientiousness", "SD Conscientiousness", "Mean Health", "SD Health"), caption = "Descriptive Statistics for Conscientiousness and Health", format.args = list(nsmall = 2))
+```
+
+
+# Data Visualization
+
+As mentioned in class, prior to fitting a linear model, it's important to visualize the relationships between the variables in the study to make sure that the pattern observed fits the assumption of linearity.
+
+Let's make a scatterplot to visualize the nature of the relationship between conscientiousness and health scores.
+```{r}
+ggplot(data = data, aes(x = consc, y = sr_health)) +
+  geom_point() + 
+  geom_smooth(method = "lm") + # add se = FALSE if you don't want the SE shading on the graph
+  labs(x     = "Conscientiousness", 
+       y     = "Self-reported health", 
+       title = "The Relationship Between Conscientiousness and Health Scores")
+```
+
+It looks like the general relationship does fit the pattern of a straight line. Let's move forward with performing the linear regression analysis.
+
+
+# Centering the Predictor
+
+It is typical to mean center continuous predictors in linear regression models. This only affects the meaning of zero on the predictor variable. After mean centering, a score of zero on the predictor variable corresponds to a participant scoring equal to the mean of the predictor.
+
+Let's add a mean-centered version of the `consc` variable to our data set and call it `consc_c`.  
+```{r}
+data$consc_c <- scale(data$consc, center = TRUE, scale = FALSE) # set scale = TRUE if you want to standardize the scores on the predictor variable (aka, transform the raw scores into z-scores)
+```
+
+When do you center continuous predictors?
+
+* When a score of zero is not meaningful on your predictor variable and you want the model to have a meaningful y-intercept value (b0)
+* When there are multiple continuous predictors in the model and you are constructing an interaction term between them (to reduce redundancy - we'll take more about this later in the course!)
+
+If there's only a single continuous predictor in the model, it's up to the researcher whether they'd like to center the predictor variable or not.
+
+
+# Fit the Model
+
+Fit a linear model predicting `sr_health` from `consc_c` using the `lm` function. Call the object **model**.
+```{r}
+
+```
+
+Before we interpret the model output, let's check to make sure the model assumptions were met.
+
+
+Check whether model assumptions were met
+
+Recall that we are making three assumptions about the model's errors:
+
+1. Errors are normally distributed
+2. Independence of errors
+3. Homogeneity of variance
+
+Let's check whether or not the model's residuals meet each of these assumptions.
+
+## Checking whether errors are normally distributed
+
+### Distribution of the Residuals
+
+There are two ways to check this assumption. First, we could look at a distribution of the model's residuals. We can do this by extracting the model's residuals using the `augment` function from the `broom` package. This results in a table with columns corresponding to our model, like the value the model predicts for each participant (`.fitted`) and the residual for each participant (`.resid`). 
+
+We'll be graphing the values in the `.resid` column.
+```{r}
+# storing table containing residuals
+augment_model <- augment(model)
+augment_model
+
+# plotting histogram of residuals
+ggplot(data = augment_model, aes(x = .resid)) + 
+  geom_density(fill = "purple") + # histogram of the residuals
+  stat_function(linetype = 2, # a normal distribution overlaid on top for reference
+                fun = dnorm, 
+                args = list(mean = mean(augment_model$.resid), 
+                                sd   =   sd(augment_model$.resid))) 
+```
+
+Slightly positively skewed, but the normality assumption is robust to some degree of violation.
+
+### Q-Q Plot
+
+Another way to check whether the errors are normally distributed is by looking at a Q-Q plot:
+```{r}
+ggplot(model) +
+  geom_abline() + 
+  stat_qq(aes(sample = .stdresid))
+```
+
+To meet the assumption, the points should be close to lying on the diagonal reference line. Looks like they approximately do!
+
+
+## Checking independence of errors
+
+Ensuring that each of the participants in the sample (and thus their errors) are independent of each other should occur during data collection. 
+
+To test for non-independence when the research design does not inform you, though, you can look at a plot of the residuals with a variable that the errors should not correspond to (e.g., ID number, time).
+
+Let’s check whether we have violated the assumption of independence of errors by plotting residuals against ID numbers for the model.
+
+```{r}
+# create an ID column (let's assume the participants are listed in the order in which they participated in the study)
+data$ID <- c(1:nrow(data))
+
+# add the ID column to the table containing the residuals
+augment_model$ID <- data$ID
+
+# plot the ID numbers against the residuals
+ggplot(data = augment_model, aes(x = ID, y = .resid)) + 
+  geom_point() +  
+  geom_smooth(se = F) +
+  geom_hline(yintercept = 0)
+```
+
+We want there to not be a systematic pattern in the relationship between the residuals and a variable the residuals should not be related to, like ID. It looks like there isn't a strong pattern here - good!
+
+
+## Checking homogeneity of variance
+
+Homogeneity of variance is the assumption that the variance of an outcome is approximately the same across all values of the predictor(s). We can use a **residuals plot** to examine whether our model has met this assumption. To obtain a residuals plot, pass the model to the `plot()` function and request the firs plot.
+```{r}
+plot(model, 1)
+```
+
+We are looking to see that the amount of spread in the residuals across the range of fitted values is approximately the same. Looks pretty good - just a little sparse at the edges.
+
+
+# Interpreting the Model Output
+
+We can examine the model output using two different functions:
+
+* summary()
+* anova()
+
+They each provide slightly different pieces of useful information, but both will help us come to the same conclusion.
+
+## summary()
+
+The `summary()` function will provide:
+
+* The values of the parameter estimates (in this case, $b_0$ and $b_1$)
+* The significance of each of the parameter estimates based on a t-statistic
+* The variance accounted for by the overall model, $R^2$, as well as its adjusted value, $R^2_adj$
+* The significance of the overall model based on an F-statistic
+
+Let's pair the `summary()` function with also running the `confint()` function to get 95% confidence intervals around each of our parameter estimates. 
+
+```{r}
+summary(model)
+confint(model)
+```
+
+>> Question: What is the value of b0 and what is its meaning? What is its 95%CI and what is its meaning?
+
+
+
+>> Question: What is the value of b1 and what is its meaning? What is its 95%CI and what is its meaning?
+
+
+
+>> Is conscientiousness a significant predictor of health outcomes?
+
+
+
+>> Is the variance accounted for by the overall model in health scores significant?
+
+
+
+## anova()
+
+The `anova()` function will provide:
+
+* SSR = the additional sum of squares accounted for by Model A compared to Model C
+* SSE(A) = the remaining sum of squares left unaccounted for by Model A
+* df_Reduced = PA - PC (also called df_Error)
+* df_ModelA = n - PA
+* MSR = SSR/(PA-PC)
+* MSE = SSE(A)/df_ModelA
+* F = MSR/MSE
+* p
+
+The anova() function is helpful for us checking that we did our by-hand calculations correctly. 
+
+```{r}
+anova(model)
+```
+
+>> Question: Does Model A, which includes conscientiousness as a predictor, make a significant improvement to the error accounted for in health scores compared to Model C?
+
+
+
+
+# Effect Size 
+
+So far, we have only examined the *significance* of conscientiousness as a predictor of health outcomes. However, this does not inform us about the **size** of the relationship between conscientiousness and health outcomes.
+
+**PRE** is a useful measure of effect size for calculating the proportion of variability in our outcome that is explained by its relationship to a predictor. In R, we can obtain PRE using the `etaSquared()` function from the `lsr` package.
+
+```{r}
+etaSquared(model)
+```
+
+>> Question: How would you interpret the size of the relationship?
+
+
+
+
+
+
+When there is only a *single predictor* in the model, $eta^2$ will be equal to $eta^2_{partial}$. When we get to multiple regression, we'll see that these values are not always equal to each other and we'll discuss why. 
+
+
+# APA-Style Summary
+
+In this study, we were interested in examining whether people's levels of conscientiousness (*M* = 2.85, *SD* = 0.97) predicts people's self-reported health outcomes (*M* = 3.05, *SD* = 1.00). 
+
+Using a linear regression analysis, we found that conscientiousness was a significant, positive predictor of people's self-reported health outcomes, *b1* = 0.49, *t*(58) = 4.13, *p* < .001, 95%CI[0.25, 0.73].
+
+Additionally, the model including conscientiousness as a predictor accounted for a significant amount of the variability in people's self-reported health scores, *R^2* = 0.23, *F*(1, 58) = 17.04, *p* < .001. This was a medium sized effect.
