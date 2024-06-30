@@ -1,0 +1,313 @@
+---
+title: "Linear Regression with a Single Categorical Predictor with 2+ Independent Levels"
+output:
+  html_document:
+    theme: cerulean
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+  word_document:
+    toc: yes
+    toc_depth: '3'
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r include = FALSE}
+# Libraries
+library(rio) # importing data
+library(psych) # descriptive statistics
+library(tidyverse) # data wrangling
+library(knitr) # for knitting
+library(epiDisplay) # for frequency tables
+library(ggplot2) # data visualization
+library(broom) # for augment() function
+library(lsr) # for etaSquared() function
+library(car) # for Anova() and leveneTest()
+
+# install.packages("emmeans")
+library(emmeans)
+```
+
+For today's lab, we'll be using the data set called `disagreeableness.csv` on Canvas.
+
+**Example:** Let's say a researcher is interested in whether people's relationship statuses are related to how disagreeable they are. The researcher asks 162 participants whether they are single (1), dating (2), or seriously dating (3) and also measures their disagreeableness (sample item: "I tend to find fault with others."). 
+
+One of the researcher's hypotheses that they would like to test is that people who are single will score significantly differently on disagreeableness compared to people who are not single. 
+
+
+# Import the data
+```{r}
+data <- import("disagreeableness.csv")
+```
+
+
+# Data Cleaning 
+
+First, let's inspect each variable's measure type & correct any, if needed.
+```{r}
+str(data)
+```
+
+* `ID` & `RelationshipStatus` should be transformed into factors
+
+```{r}
+data <- data %>%
+  mutate(ID = as.factor(ID),
+         RelationshipStatus = factor(RelationshipStatus, labels = c("Single", "Dating", "Seriously Dating")))
+```
+
+We can use descriptive statistics to check for any data entry errors.
+```{r}
+describe(data)
+tab1(data$RelationshipStatus)
+hist(data$Disagreeableness)
+```
+
+* Everything looks good! The data is also already set up the way we need it to be for the analysis (the IV and DV should each be their own columns).
+
+
+# Descriptive Statistics
+
+Let's start with descriptively examining the M and SD on disagreeableness across the three levels of `RelationshipStatus`.
+```{r}
+descriptives <- data %>%
+  group_by(RelationshipStatus) %>%
+  summarize(M = mean(Disagreeableness, na.rm = TRUE),
+            SD = sd(Disagreeableness, na.rm = TRUE))
+
+# Making the table look a little nicer
+descriptives %>%
+  knitr::kable(digits = 5, col.names = c("Relationship Status", "Mean", "SD"), caption = "Descriptive Statistics for Disagreeableness Across Each Relationship Status", format.args = list(nsmall = 2))
+
+# And we can plot the descriptives
+ggplot(descriptives, aes(x = RelationshipStatus, y = M, fill = RelationshipStatus)) +
+  geom_bar(stat = "identity") +
+  ggtitle("Average Disagreeableness Across Relationship Statuses") +
+  labs(x = "Relationship Status",
+       y = "Mean Disagreeableness") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+
+# Coding the Categorical Predictor
+
+Recall that the number of codes that need to be included in the model is equal to m-1, or the number of levels of the categorical predictor minus 1. In this case, `RelationshipStatus` has three levels, thus, we need to construct **2 codes** to represent it in the model. We will go with the recommended **contrast coding** method. 
+
+Recall that the researcher had a hypothesis that people who are single will score significantly differently on disagreeableness compared to people who are not single. To test this hypothesis, let's use contrast codes that compare the mean of the `Single` condition to the average across the `Dating` and `Seriously Dating` conditions. For instance, we could use:
+
+* RelCode1: Single = 2/3, Dating = -1/3, Seriously Dating = -1/3
+
+Then, we just need to construct RelCode2 so that it meets the rules of contrast coding in combination with RelCode1. One option would be:
+
+* RelCode2 = Single = 0, Dating = 1/2, Seriously Dating = -1/2
+
+```{r}
+RelCode1 <- c(2/3, -1/3, -1/3)
+RelCode2 <- c(0, 1/2, -1/2)
+
+contrasts(data$RelationshipStatus) <- cbind(RelCode1, RelCode2)
+
+contrasts(data$RelationshipStatus)
+```
+
+* Note that `RelCode1` makes the comparison that the researcher would like to test. Knowing this, we can construct our desired model comparison.
+
+
+# Testing a Single Predictor
+
+The model corresponding to the null hypothesis, Model C, is:
+
+$$Model C: Disagreeableness_i = \beta_0 + \beta_2*RelCode2 + \epsilon_i$$
+
+The model corresponding to the alternative hypothesis, Model A, is:
+$$Model A: Disagreeableness_i = \beta_0 + \beta_1*RelCode1 + \beta_2*RelCode2 + \epsilon_i$$
+
+# Hypotheses
+
+The null hypothesis is that the model parameter corresponding to `RelCode1` will be equal to zero.
+
+$$H_0: \beta_1\ = 0$$
+The alternative hypothesis is that the model parameter corresponding to `RelCode1` will not be equal to zero.
+
+$$H_1: \beta_1\ \neq 0$$
+
+# Fit the Model
+
+Let's fit the model predicting `Disagreebleness` from `RelationshipStatus`, which we have just made custom contrast codes for.
+```{r}
+model <- lm(Disagreeableness ~ RelationshipStatus, data = data)
+```
+
+
+# Check whether model assumptions were met
+
+## Checking whether errors are normally distributed
+```{r}
+augment_model <- augment(model)
+augment_model
+
+ggplot(data = augment_model, aes(x = .resid)) + 
+  geom_density(fill = "purple") + 
+  stat_function(linetype = 2, 
+                fun = dnorm, 
+                args = list(mean = mean(augment_model$.resid), 
+                                sd   =   sd(augment_model$.resid))) 
+```
+
+* The residuals are somewhat negatively skewed, but recall that this is a robust assumption. 
+
+```{r}
+ggplot(model) +
+  geom_abline() + 
+  stat_qq(aes(sample = .stdresid))
+```
+
+* The QQ-plot also suggests some degree of violation of the normality assumption, but we will proceed since this is a robust assumption.
+
+
+## Checking independence of errors
+```{r}
+data$ID <- c(1:nrow(data))
+
+augment_model$ID <- data$ID
+
+ggplot(data = augment_model, aes(x = ID, y = .resid)) + 
+  geom_point() +  
+  geom_smooth(se = F) +
+  geom_hline(yintercept = 0)
+```
+
+* Good - there doesn't look to be a systematic pattern between ID number of the model's errors.
+
+
+## Checking homogeneity of variances 
+```{r}
+plot(model, 1)
+```
+
+* Remember that we are looking to see that the amount of spread in the data at each level of condition is approximately the same. If you can't tell visually, you can also run **Levene's test**.
+
+```{r}
+leveneTest(Disagreeableness ~ RelationshipStatus, data = data)
+```
+
+* Good - levene's test for homogeneity of variances is non-significant (suggesting the variability in scores is *not* significantly different across conditions).
+
+
+
+# Interpreting the Model Output
+
+First, let's pass the model to the `summary()` function.
+```{r}
+summary(model)
+```
+
+
+**Question:** Can you interpret the meaning of each parameter estimate in the context of the current research scenario?
+
+* Estimate
+  + b0 = 5.36 
+    + Interpretation: 
+    
+  + b1 = -0.29
+    + Interpretation:
+    
+  + b2 = 0.50
+    + Interpretation:
+  
+
+**Question:** Is the parameter estimate corresponding to a test of the difference between the mean of the `Single` condition and the average of the `Dating` and `Seriously Dating` conditions significant or non-significant?
+
+
+
+
+
+# Testing Multiple Predictors
+
+We might also be interested in whether `RelationshipStatus` **overall** mattered for predicting scores on `Disagreeableness`. In other words, we could also wish to examine the following model comparison:
+
+
+$$Model C: Disagreeableness_i = \beta_0 + \epsilon_i$$
+
+$$Model A: Disagreeableness_i = \beta_0 + \beta_1*RelCode1 + \beta_2*RelCode2 + \epsilon_i$$
+
+## Null Hypothesis 
+
+The null hypothesis would be that $\beta_1$ and $\beta_2$ are *both* equal to zero.
+
+$$H_0: \beta_1\ = \beta_2\ = 0$$
+
+We can test this model comparison by looking at our model output using the `anova()` function:
+```{r}
+anova(model)
+```
+
+* Overall, relationship status did not significantly predict people's disagreeableness, *F*(2, 159) = 2.73, *p* = .068.
+
+
+
+# Effect Size & Confidence Intervals
+
+## Effect Size
+
+Remember that the *significance* of the findings does not speak to the *size* of the findings. Effect sizes are important to report to give the audience an idea of the **practical importance** of the effect or relationship being discussed, as well as for future researchers who may want to include your study in a **meta-analysis**.
+```{r}
+# Eta-Squared for relationship status
+etaSquared(model) 
+```
+
+* Relationship status accounted for only 3.32% of the variability in people's disagreeableness scored.
+
+```{r}
+# Cohen's d for specific group comparisons
+means <- emmeans(model, ~RelationshipStatus)
+
+eff_size(means, sigma = sigma(model), edf = df.residual(model))
+```
+
+* The largest standardized difference was between the `Single` and `Dating` conditions.
+
+```{r}
+# Obtaining Cohen's d for Single vs the combination of the Dating and Seriously Dating conditions
+single <- c(1,0,0)
+dating <- c(0,1,0)
+serious <- c(0,0,1)
+
+dating_and_serious <- (dating + serious)/2
+
+eff_size(means, method = list("Single vs Not single" = single - dating_and_serious), sigma = sigma(model), edf = df.residual(model))
+```
+
+* See this post (https://aosmith.rbind.io/2019/04/15/custom-contrasts-emmeans/#the-contrast-function-for-custom-comparisons) for further elaboration on how to make custom comparisons using the `emmeans` package.
+
+
+## Confidence Intervals
+
+```{r}
+confint(model)
+```
+
+* For b0: 95%CI[5.17, 5.55]
+* For b1: 95%CI[-0.66, 0.08]
+* For b2: 95%CI[-0.00, 1.01]
+
+
+
+# APA-Style Summary
+
+In this study, we examined whether relationship status predicted people's disagreeableness. Specifically, we wanted to test whether people who were single had significantly different disagreeableness compared to people who were dating or seriously dating. 
+
+Using a linear regression analysis, we found that people who were single did not score significantly differently on disagreeableness compared to people who were dating or seriously dating, *t*(159) = -1.57, *p* = .119, *d* = 0.25, *b1* = -0.29, 95%CI[-0.66, 0.08].
+
+In fact, overall, relationship status did not significantly predict people's disagreeableness, *F*(2, 159) = 2.73, *p* = .068, $R^2$ = 0.03.
+
